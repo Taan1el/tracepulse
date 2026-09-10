@@ -1,0 +1,22 @@
+services:
+  tracepulse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tracepulse-engine
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+    volumes:
+      - tracepulse-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  tracepulse-data:
