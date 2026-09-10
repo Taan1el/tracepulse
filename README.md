@@ -12,7 +12,7 @@
 
 ---
 
-## ⚡ 2-Minute Overview
+## ⚡ 2-Minute Product Overview
 **TracePulse** is a production-grade distributed tracing and Application Performance Monitoring (APM) platform. Designed for modern microservice architectures, it ingests OpenTelemetry-compatible span payloads, implements the W3C Trace Context (`traceparent`) standard, computes statistical latency percentiles (P50, P90, P95 SLA, P99 tail), reconstructs execution DAGs into interactive Gantt waterfall timelines with bottleneck detection, and automatically maps service-to-service communication topologies.
 
 ### Core Capabilities
