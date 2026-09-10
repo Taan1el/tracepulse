@@ -1,0 +1,35 @@
+{
+  "name": "tracepulse",
+  "version": "1.0.0",
+  "description": "Distributed Tracing, OpenTelemetry Spans & Microservice Performance Observability Engine",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=server & npm run dev --workspace=client",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "npm run build --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "test": "npm run test:server && npm run test:client",
+    "test:server": "npm run test --workspace=server",
+    "test:client": "npm run test --workspace=client",
+    "lint": "npm run lint:server && npm run lint:client",
+    "lint:server": "npm run lint --workspace=server",
+    "lint:client": "npm run lint --workspace=client"
+  },
+  "keywords": [
+    "opentelemetry",
+    "distributed-tracing",
+    "w3c-tracecontext",
+    "apm",
+    "microservices",
+    "observability",
+    "react19",
+    "sqlite-wal"
+  ],
+  "author": "Taaneiel",
+  "license": "MIT"
+}
