@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { TraceService } from '../services/trace.service.js';
 import { SimulatorService } from '../services/simulator.service.js';
+import { parseTraceQuery, TraceQueryError } from './trace-query.js';
 import { parseTraceparent, formatTraceparent, generateTraceId, generateSpanId } from '../services/traceparent.js';
 
 export class TraceController {
@@ -34,23 +35,12 @@ export class TraceController {
 
   queryTraces = (req: Request, res: Response): void => {
     try {
-      const serviceName = req.query.service as string | undefined;
-      const minDurationMs = req.query.minDuration ? parseFloat(req.query.minDuration as string) : undefined;
-      const maxDurationMs = req.query.maxDuration ? parseFloat(req.query.maxDuration as string) : undefined;
-      const hasError = req.query.hasError !== undefined ? req.query.hasError === 'true' : undefined;
-      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
-
-      const traces = this.traceService.queryTraces({
-        serviceName,
-        minDurationMs,
-        maxDurationMs,
-        hasError,
-        limit,
-      });
+      const traces = this.traceService.queryTraces(parseTraceQuery(req.query));
 
       res.json({ success: true, data: traces });
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || 'Query failed' });
+      res.status(err instanceof TraceQueryError ? 400 : 500)
+        .json({ success: false, error: err.message || 'Query failed' });
     }
   };
 

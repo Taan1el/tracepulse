@@ -153,3 +153,18 @@ Detailed architectural rationale:
 - [x] **OpenTelemetry & W3C Compliant**: Strict validation of 32-hex trace IDs and 16-hex span IDs.
 - [x] **Full TypeScript Strict Compliance**: End-to-end type safety sharing `shared/types.ts` between client and server.
 - [x] **Multi-Stage Docker & Compose**: Production container with health check and persistent data volume.
+
+### Trace query parameters
+
+`GET /api/traces` accepts optional `service`, `minDuration`, `maxDuration`,
+`hasError`, and `limit` filters. Each must occur at most once and contain a
+non-empty scalar value. Unknown query keys are ignored.
+
+- `service`: a non-blank service name.
+- `minDuration` / `maxDuration`: finite, non-negative decimal milliseconds
+  (scientific notation supported). Bounds are inclusive; minimum cannot exceed maximum.
+- `hasError`: exactly `true` or `false`; omit to include both.
+- `limit`: digits representing an integer from 1 through 100; defaults to 50.
+
+Invalid filters return HTTP 400 with `{ "success": false, "error": "..." }`
+without querying storage. Valid queries return traces newest first.
