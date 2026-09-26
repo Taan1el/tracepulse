@@ -117,8 +117,11 @@ export class TraceRepository {
     const params: any[] = [];
 
     if (filter?.serviceName) {
-      sql += ' AND (root_service_name = ? OR services_json LIKE ?)';
-      params.push(filter.serviceName, `%"${filter.serviceName}"%`);
+      sql += ` AND (root_service_name = ? OR EXISTS (
+        SELECT 1 FROM json_each(traces.services_json) AS service
+        WHERE service.value = ?
+      ))`;
+      params.push(filter.serviceName, filter.serviceName);
     }
 
     if (filter?.minDurationMs !== undefined) {

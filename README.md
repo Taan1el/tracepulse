@@ -160,7 +160,9 @@ Detailed architectural rationale:
 `hasError`, and `limit` filters. Each must occur at most once and contain a
 non-empty scalar value. Unknown query keys are ignored.
 
-- `service`: a non-blank service name.
+- `service`: a non-blank, exact, case-sensitive service name matching the root
+  service or any service in the trace. Characters such as `%` and `_` are literal,
+  not wildcards; URL-encode special characters in query values.
 - `minDuration` / `maxDuration`: finite, non-negative decimal milliseconds
   (scientific notation supported). Bounds are inclusive; minimum cannot exceed maximum.
 - `hasError`: exactly `true` or `false`; omit to include both.
