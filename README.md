@@ -170,3 +170,22 @@ non-empty scalar value. Unknown query keys are ignored.
 
 Invalid filters return HTTP 400 with `{ "success": false, "error": "..." }`
 without querying storage. Valid queries return traces newest first.
+
+### Simulation options
+
+`POST /api/simulate` accepts a JSON object with optional fields:
+
+- `flowType`: `checkout` (default), `auth`, `search`, or `batch`.
+- `injectAnomaly`: a JSON boolean, default `false`, applied to single flows.
+- `batchCount`: a JSON integer from 1 through 20. Values outside this range,
+  fractions, strings, and null are rejected rather than coerced or clamped.
+
+An empty object or omitted body generates one healthy checkout trace. Explicit
+`batch` requests default to five traces. A count greater than one also selects
+batch mode; batches rotate through the three flows and choose anomalies randomly,
+independently of `injectAnomaly`. A count of one retains single-flow mode unless
+`flowType` is `batch`. Unknown object fields are ignored.
+
+Invalid option values or array bodies return HTTP 400 with
+`{ "success": false, "error": "..." }` before generating or storing any traces.
+Unexpected generation or storage failures return HTTP 500.

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { TraceService } from '../services/trace.service.js';
 import { SimulatorService } from '../services/simulator.service.js';
 import { parseTraceQuery, TraceQueryError } from './trace-query.js';
+import { parseSimulationRequest, SimulationRequestError } from './simulation-request.js';
 import { parseTraceparent, formatTraceparent, generateTraceId, generateSpanId } from '../services/traceparent.js';
 
 export class TraceController {
@@ -80,10 +81,10 @@ export class TraceController {
 
   simulate = (req: Request, res: Response): void => {
     try {
-      const { flowType = 'checkout', injectAnomaly = false, batchCount } = req.body;
+      const { flowType, injectAnomaly, batchCount } = parseSimulationRequest(req.body);
 
       if (flowType === 'batch' || (batchCount && batchCount > 1)) {
-        const count = Math.min(20, Math.max(1, batchCount || 5));
+        const count = batchCount ?? 5;
         const traces = this.simulatorService.simulateBatch(count);
         res.json({ success: true, count: traces.length, data: traces.map((t) => t.summary) });
       } else {
@@ -91,7 +92,8 @@ export class TraceController {
         res.json({ success: true, data: trace });
       }
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || 'Simulation failed' });
+      res.status(err instanceof SimulationRequestError ? 400 : 500)
+        .json({ success: false, error: err.message || 'Simulation failed' });
     }
   };
 
