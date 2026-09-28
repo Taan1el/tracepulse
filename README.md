@@ -123,6 +123,12 @@ docker compose up --build
 
 ## 📡 REST API Reference
 
+JSON request bodies are limited to 10 MB. Malformed JSON (including top-level
+scalars or null) returns HTTP 400; oversized bodies return HTTP 413; unsupported
+JSON charsets or content encodings return HTTP 415. These responses use
+`{ "success": false, "error": "..." }` with a fixed message and reject the request
+before ingestion or simulation. These errors do not echo or log request bodies.
+
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/health` | Healthcheck and engine status |

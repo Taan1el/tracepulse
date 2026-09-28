@@ -25,6 +25,26 @@ export function createApp(dbPath?: string, shouldSeed = true): AppContext {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '10mb' }));
+  // Handle parser failures before application routes without exposing request bodies.
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    const type = typeof err === 'object' && err !== null && 'type' in err ? err.type : undefined;
+    switch (type) {
+      case 'entity.parse.failed':
+        res.status(400).json({ success: false, error: 'Invalid JSON body' });
+        return;
+      case 'entity.too.large':
+        res.status(413).json({ success: false, error: 'JSON body exceeds the 10 MB limit' });
+        return;
+      case 'charset.unsupported':
+        res.status(415).json({ success: false, error: 'Unsupported JSON charset' });
+        return;
+      case 'encoding.unsupported':
+        res.status(415).json({ success: false, error: 'Unsupported content encoding' });
+        return;
+      default:
+        next(err);
+    }
+  });
 
   const db = createDatabase(dbPath);
   initializeSchema(db);
