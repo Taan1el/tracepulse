@@ -160,6 +160,30 @@ Detailed architectural rationale:
 - [x] **Full TypeScript Strict Compliance**: End-to-end type safety sharing `shared/types.ts` between client and server.
 - [x] **Multi-Stage Docker & Compose**: Production container with health check and persistent data volume.
 
+### Span ingestion
+
+`POST /api/traces` accepts `{ "spans": [...] }` with a non-empty array of span
+objects. Validation completes for the entire batch before any trace is saved.
+
+- `id` and `traceId`: non-zero hexadecimal strings of 16 and 32 characters.
+  Optional `parentSpanId` accepts a non-zero 16-hex string or null.
+- `serviceName` and `name`: non-blank strings, preserved as supplied.
+- `kind`: `SERVER`, `CLIENT`, `PRODUCER`, `CONSUMER`, or `INTERNAL`.
+- `statusCode`: `OK`, `ERROR`, or `UNSET`; optional `statusMessage` is a string or null.
+- `startTimeMs` and `endTimeMs`: finite JSON numbers from zero through
+  `Number.MAX_SAFE_INTEGER`, with end greater than or equal to start. Fractional
+  milliseconds and zero-duration spans are accepted. Duration is computed by
+  the server and rounded to two decimal places.
+- `attributes`: optional object of strings, finite numbers, or booleans;
+  defaults to `{}`. Nested objects, arrays, and null values are rejected.
+- `events`: optional array of objects with a non-blank `name`, a `timestampMs`
+  satisfying the same numeric bounds, and optional scalar `attributes`.
+
+Invalid input returns HTTP 400 with `{ "success": false, "error": "..." }`;
+field errors identify the span index and field without echoing its value.
+Existing traces remain unchanged when validation fails. Unexpected storage
+failures return HTTP 500 with a fixed `Ingestion failed` message.
+
 ### Trace query parameters
 
 `GET /api/traces` accepts optional `service`, `minDuration`, `maxDuration`,

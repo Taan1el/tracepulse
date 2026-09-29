@@ -7,28 +7,14 @@ import type {
 } from '../../../shared/types.js';
 import { TraceRepository } from '../repositories/trace.repository.js';
 import { buildSpanTree } from './trace-tree.js';
-import { isValidTraceId, isValidSpanId } from './traceparent.js';
+import { parseInputSpans, SpanInputError } from './span-input.js';
 
 export class TraceService {
   constructor(private traceRepo: TraceRepository) {}
 
-  ingestSpans(inputSpans: Array<Omit<SpanRecord, 'durationMs'>>): TraceDetail {
-    if (!inputSpans || inputSpans.length === 0) {
-      throw new Error('At least one span is required for ingestion');
-    }
-
-    const processedSpans: SpanRecord[] = inputSpans.map((s) => {
-      if (!isValidTraceId(s.traceId)) {
-        throw new Error(`Invalid traceId: ${s.traceId}`);
-      }
-      if (!isValidSpanId(s.id)) {
-        throw new Error(`Invalid span id: ${s.id}`);
-      }
-      if (s.parentSpanId && !isValidSpanId(s.parentSpanId)) {
-        throw new Error(`Invalid parentSpanId: ${s.parentSpanId}`);
-      }
-
-      const durationMs = Math.max(0, Math.round((s.endTimeMs - s.startTimeMs) * 100) / 100);
+  ingestSpans(inputSpans: unknown): TraceDetail {
+    const processedSpans: SpanRecord[] = parseInputSpans(inputSpans).map((s) => {
+      const durationMs = Math.round((s.endTimeMs - s.startTimeMs) * 100) / 100;
 
       return {
         ...s,
@@ -41,7 +27,7 @@ export class TraceService {
     const rootNode = treeResult.rootNode;
 
     if (!rootNode) {
-      throw new Error('Could not construct root node from provided spans');
+      throw new SpanInputError('Could not construct root node from provided spans');
     }
 
     const serviceSet = new Set<string>();

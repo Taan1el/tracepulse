@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { TraceService } from '../services/trace.service.js';
+import { SpanInputError } from '../services/span-input.js';
 import { SimulatorService } from '../services/simulator.service.js';
 import { parseTraceQuery, TraceQueryError } from './trace-query.js';
 import { parseSimulationRequest, SimulationRequestError } from './simulation-request.js';
@@ -21,7 +22,7 @@ export class TraceController {
 
   ingest = (req: Request, res: Response): void => {
     try {
-      const { spans } = req.body;
+      const spans = req.body?.spans;
       if (!spans || !Array.isArray(spans)) {
         res.status(400).json({ success: false, error: 'Expected { spans: [] } in request body' });
         return;
@@ -29,8 +30,9 @@ export class TraceController {
 
       const result = this.traceService.ingestSpans(spans);
       res.status(201).json({ success: true, data: result });
-    } catch (err: any) {
-      res.status(400).json({ success: false, error: err.message || 'Ingestion failed' });
+    } catch (err: unknown) {
+      res.status(err instanceof SpanInputError ? 400 : 500)
+        .json({ success: false, error: err instanceof SpanInputError ? err.message : 'Ingestion failed' });
     }
   };
 
