@@ -28,7 +28,7 @@ function attributes(value: unknown, path: string): void {
 
 export function parseInputSpans(input: unknown): Array<Omit<SpanRecord, 'durationMs'>> {
   requireValue(Array.isArray(input) && input.length > 0, 'spans', 'must be a non-empty array');
-  return input.map((span: unknown, index: number) => {
+  const spans = input.map((span: unknown, index: number) => {
     const path = `spans[${index}]`;
     requireValue(object(span), path, 'must be an object');
     requireValue(typeof span.id === 'string' && isValidSpanId(span.id), `${path}.id`, 'must be a non-zero 16-hex string');
@@ -54,6 +54,20 @@ export function parseInputSpans(input: unknown): Array<Omit<SpanRecord, 'duratio
         if (event.attributes !== undefined) attributes(event.attributes, `${eventPath}.attributes`);
       });
     }
-    return { ...span, attributes: span.attributes ?? {} } as Omit<SpanRecord, 'durationMs'>;
+    return {
+      ...span,
+      id: span.id.toLowerCase(),
+      traceId: span.traceId.toLowerCase(),
+      parentSpanId: typeof span.parentSpanId === 'string' ? span.parentSpanId.toLowerCase() : span.parentSpanId,
+      attributes: span.attributes ?? {},
+    } as Omit<SpanRecord, 'durationMs'>;
   });
+  const traceId = spans[0].traceId;
+  const spanIds = new Set<string>();
+  spans.forEach((span, index) => {
+    requireValue(span.traceId === traceId, `spans[${index}].traceId`, 'must match the first span traceId');
+    requireValue(!spanIds.has(span.id), `spans[${index}].id`, 'must be unique within the batch');
+    spanIds.add(span.id);
+  });
+  return spans;
 }

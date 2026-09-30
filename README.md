@@ -166,6 +166,10 @@ Detailed architectural rationale:
 objects. Validation completes for the entire batch before any trace is saved.
 
 - `id` and `traceId`: non-zero hexadecimal strings of 16 and 32 characters.
+  All spans in a request must share one trace ID and have distinct span IDs,
+  including otherwise identical duplicates. IDs and parent IDs are normalized
+  to lowercase before comparison, tree construction, and storage. Invalid
+  batches return HTTP 400 before any writes; existing traces remain unchanged.
   Optional `parentSpanId` accepts a non-zero 16-hex string or null.
 - `serviceName` and `name`: non-blank strings, preserved as supplied.
 - `kind`: `SERVER`, `CLIENT`, `PRODUCER`, `CONSUMER`, or `INTERNAL`.
