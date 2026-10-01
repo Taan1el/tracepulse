@@ -69,5 +69,34 @@ export function parseInputSpans(input: unknown): Array<Omit<SpanRecord, 'duratio
     requireValue(!spanIds.has(span.id), `spans[${index}].id`, 'must be unique within the batch');
     spanIds.add(span.id);
   });
+  validateParentChains(spans);
   return spans;
+}
+
+function validateParentChains(spans: Array<Omit<SpanRecord, 'durationMs'>>): void {
+  const byId = new Map(spans.map((span, index) => [span.id, { span, index }]));
+  const depths = new Map<string, number>();
+
+  // Walk every component iteratively, then reuse resolved ancestor depths.
+  for (const entry of byId.values()) {
+    const path: Array<typeof entry> = [];
+    const visiting = new Set<string>();
+    let current: typeof entry | undefined = entry;
+    while (current && !depths.has(current.span.id)) {
+      requireValue(!visiting.has(current.span.id), `spans[${current.index}].parentSpanId`,
+        'must not form a cycle');
+      visiting.add(current.span.id);
+      path.push(current);
+      current = current.span.parentSpanId ? byId.get(current.span.parentSpanId) : undefined;
+    }
+
+    let depth = current ? depths.get(current.span.id)! : -1;
+    while (path.length > 0) {
+      const ancestor = path.pop()!;
+      depth++;
+      requireValue(depth <= 128, `spans[${ancestor.index}].parentSpanId`,
+        'must not exceed 128 parent edges within the batch');
+      depths.set(ancestor.span.id, depth);
+    }
+  }
 }

@@ -171,6 +171,10 @@ objects. Validation completes for the entire batch before any trace is saved.
   to lowercase before comparison, tree construction, and storage. Invalid
   batches return HTTP 400 before any writes; existing traces remain unchanged.
   Optional `parentSpanId` accepts a non-zero 16-hex string or null.
+  Parent chains must be acyclic and contain at most 128 edges within the batch
+  (root depth is zero). Every component is checked, including disconnected
+  spans. Missing parents remain valid for partial traces and count as roots;
+  spans may arrive in any order. Invalid graphs return HTTP 400 before saving.
 - `serviceName` and `name`: non-blank strings, preserved as supplied.
 - `kind`: `SERVER`, `CLIENT`, `PRODUCER`, `CONSUMER`, or `INTERNAL`.
 - `statusCode`: `OK`, `ERROR`, or `UNSET`; optional `statusMessage` is a string or null.
