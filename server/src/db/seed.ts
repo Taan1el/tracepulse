@@ -16,5 +16,5 @@ export function seedDatabase(db: DatabaseSync): void {
 
   // Generate a diverse batch of 15 traces
   simulator.simulateBatch(15);
-  console.log('[TracePulse Seed] Initialized 15 distributed traces across 7 microservices.');
+  console.log('[TracePulse Seed] Initialized 15 sample traces.');
 }

@@ -1,4 +1,4 @@
-import type { SpanRecord } from '../../../shared/types.js';
+import type { SpanRecord } from './types.js';
 import { isValidSpanId, isValidTraceId } from './traceparent.js';
 
 export class SpanInputError extends Error {}

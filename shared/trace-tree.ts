@@ -1,4 +1,4 @@
-import type { SpanRecord, SpanNode } from '../../../shared/types.js';
+import type { SpanRecord, SpanNode } from './types.js';
 
 export function buildSpanTree(spans: SpanRecord[]): {
   rootNode: SpanNode | null;

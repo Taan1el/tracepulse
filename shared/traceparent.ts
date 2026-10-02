@@ -1,5 +1,4 @@
-import crypto from 'node:crypto';
-import type { W3CTraceparent } from '../../../shared/types.js';
+import type { W3CTraceparent } from './types.js';
 
 const TRACEPARENT_REGEX = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i;
 const ALL_ZEROS_32 = '00000000000000000000000000000000';
@@ -29,12 +28,18 @@ export function formatTraceparent(tp: W3CTraceparent): string {
   return `${tp.version.padStart(2, '0')}-${tp.traceId.padStart(32, '0')}-${tp.parentSpanId.padStart(16, '0')}-${tp.traceFlags.padStart(2, '0')}`;
 }
 
+function randomHex(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function generateTraceId(): string {
-  return crypto.randomBytes(16).toString('hex');
+  return randomHex(16);
 }
 
 export function generateSpanId(): string {
-  return crypto.randomBytes(8).toString('hex');
+  return randomHex(8);
 }
 
 export function isValidTraceId(traceId: string): boolean {

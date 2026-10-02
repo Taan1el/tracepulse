@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp, type AppContext } from '../src/app.js';
-import { parseInputSpans } from '../src/services/span-input.js';
+import { parseInputSpans } from '../../shared/span-input.js';
 
 const id = (n: number) => n.toString(16).padStart(16, '0');
 const span = (n: number, parent?: number) => ({

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
-import { parseTraceparent, formatTraceparent, isValidTraceId, isValidSpanId } from '../src/services/traceparent.js';
-import { computeLatencyStats, calculatePercentile } from '../src/services/percentile.js';
-import { buildSpanTree } from '../src/services/trace-tree.js';
+import { parseTraceparent, formatTraceparent, isValidTraceId, isValidSpanId } from '../../shared/traceparent.js';
+import { computeLatencyStats, calculatePercentile } from '../../shared/percentile.js';
+import { buildSpanTree } from '../../shared/trace-tree.js';
 import type { SpanRecord } from '../../shared/types.js';
 
 describe('TracePulse Engine Test Suite', () => {

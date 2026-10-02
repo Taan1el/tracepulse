@@ -68,7 +68,6 @@ export interface ServiceMetric {
   p90Ms: number;
   p95Ms: number;
   p99Ms: number;
-  throughputRps: number;
 }
 
 export interface ServiceDependencyEdge {

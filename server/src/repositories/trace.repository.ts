@@ -5,7 +5,7 @@ import type {
   ServiceMetric,
   ServiceDependencyEdge,
 } from '../../../shared/types.js';
-import { computeLatencyStats } from '../services/percentile.js';
+import { computeDependencies, computeServiceMetrics } from '../../../shared/analytics.js';
 
 export class TraceRepository {
   constructor(private db: DatabaseSync) {}
@@ -158,99 +158,29 @@ export class TraceRepository {
     }));
   }
 
-  getAllServices(): string[] {
-    const rows = this.db
-      .prepare('SELECT DISTINCT service_name FROM spans ORDER BY service_name ASC')
-      .all() as any[];
-    return rows.map((r) => r.service_name);
-  }
-
   getServiceMetrics(): ServiceMetric[] {
-    const services = this.getAllServices();
-    const metrics: ServiceMetric[] = [];
+    const rows = this.db
+      .prepare('SELECT service_name, duration_ms, status_code FROM spans')
+      .all() as any[];
 
-    for (const sName of services) {
-      const rows = this.db
-        .prepare('SELECT duration_ms, status_code FROM spans WHERE service_name = ?')
-        .all(sName) as any[];
-
-      const durations = rows.map((r) => r.duration_ms);
-      const stats = computeLatencyStats(durations);
-      const errorCount = rows.filter((r) => r.status_code === 'ERROR').length;
-      const errorRate =
-        rows.length > 0 ? Math.round((errorCount / rows.length) * 10000) / 100 : 0;
-
-      // Estimate throughput: request count divided by time window or relative metric
-      const throughputRps = Math.round((rows.length / Math.max(1, 60)) * 100) / 100;
-
-      metrics.push({
-        serviceName: sName,
-        requestCount: rows.length,
-        errorCount,
-        errorRate,
-        avgDurationMs: stats.avgMs,
-        p50Ms: stats.p50Ms,
-        p90Ms: stats.p90Ms,
-        p95Ms: stats.p95Ms,
-        p99Ms: stats.p99Ms,
-        throughputRps,
-      });
-    }
-
-    return metrics;
+    return computeServiceMetrics(
+      rows.map((r) => ({ serviceName: r.service_name, durationMs: r.duration_ms, statusCode: r.status_code }))
+    );
   }
 
   getServiceDependencies(): ServiceDependencyEdge[] {
-    // Find parent-child spans crossing service boundaries
     const rows = this.db
-      .prepare(`
-        SELECT 
-          p.service_name AS source,
-          c.service_name AS target,
-          c.duration_ms AS duration,
-          c.status_code AS status
-        FROM spans c
-        JOIN spans p ON c.parent_span_id = p.id
-        WHERE c.service_name != p.service_name
-      `)
+      .prepare('SELECT id, parent_span_id, service_name, duration_ms, status_code FROM spans')
       .all() as any[];
 
-    const edgeMap = new Map<
-      string,
-      { source: string; target: string; durations: number[]; errorCount: number }
-    >();
-
-    for (const r of rows) {
-      const key = `${r.source}->${r.target}`;
-      let entry = edgeMap.get(key);
-      if (!entry) {
-        entry = { source: r.source, target: r.target, durations: [], errorCount: 0 };
-        edgeMap.set(key, entry);
-      }
-      entry.durations.push(r.duration);
-      if (r.status === 'ERROR') {
-        entry.errorCount++;
-      }
-    }
-
-    const edges: ServiceDependencyEdge[] = [];
-    for (const [key, entry] of edgeMap.entries()) {
-      const sum = entry.durations.reduce((a, b) => a + b, 0);
-      const avgDurationMs =
-        entry.durations.length > 0
-          ? Math.round((sum / entry.durations.length) * 100) / 100
-          : 0;
-
-      edges.push({
-        id: key,
-        source: entry.source,
-        target: entry.target,
-        callCount: entry.durations.length,
-        avgDurationMs,
-        errorCount: entry.errorCount,
-      });
-    }
-
-    return edges;
+    return computeDependencies(
+      rows.map((r) => ({
+        id: r.id,
+        parentSpanId: r.parent_span_id,
+        serviceName: r.service_name,
+        durationMs: r.duration_ms,
+        statusCode: r.status_code,
+      }))
+    );
   }
 }
