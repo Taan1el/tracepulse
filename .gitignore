@@ -1,7 +1,15 @@
 node_modules
 dist
 .env
-data/*.db*
+.env.*
+!.env.example
+**/data/
+*.db
+*.db-*
+*.sqlite*
 coverage
+playwright-report
+test-results
 *.log
 .DS_Store
+Thumbs.db

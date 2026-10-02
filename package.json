@@ -18,18 +18,30 @@
     "test:client": "npm run test --workspace=client",
     "lint": "npm run lint:server && npm run lint:client",
     "lint:server": "npm run lint --workspace=server",
-    "lint:client": "npm run lint --workspace=client"
+    "lint:client": "npm run lint --workspace=client",
+    "build:pages": "npm run build:pages --workspace=client"
   },
   "keywords": [
     "opentelemetry",
     "distributed-tracing",
     "w3c-tracecontext",
     "apm",
-    "microservices",
+    "trace-viewer",
     "observability",
-    "react19",
-    "sqlite-wal"
+    "react",
+    "sqlite"
   ],
-  "author": "Taaneiel",
-  "license": "MIT"
+  "author": "Taaniel Vananurm",
+  "license": "MIT",
+  "homepage": "https://taan1el.github.io/tracepulse/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Taan1el/tracepulse.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Taan1el/tracepulse/issues"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
 }
