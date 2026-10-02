@@ -9,7 +9,7 @@ export interface SpanMetricRow {
 
 export interface SpanLinkRow {
   id: string;
-  parentSpanId: string | null;
+  parentSpanId?: string | null;
   serviceName: string;
   durationMs: number;
   statusCode: string;
