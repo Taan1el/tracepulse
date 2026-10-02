@@ -7,20 +7,35 @@ import type {
   ApiResponse,
 } from '../../../shared/types.js';
 
-const API_BASE = '/api';
+const API_BASE = `${import.meta.env.BASE_URL}api`;
 
-export async function fetchHealth(): Promise<{ status: string; service: string }> {
-  const res = await fetch(`${API_BASE}/health`);
-  return res.json();
-}
-
-export async function fetchTraces(params?: {
+export interface TraceFilters {
   service?: string;
   minDuration?: number;
   maxDuration?: number;
   hasError?: boolean;
   limit?: number;
-}): Promise<TraceSummary[]> {
+}
+
+export interface SimulatePayload {
+  flowType?: 'checkout' | 'auth' | 'search' | 'batch';
+  injectAnomaly?: boolean;
+  batchCount?: number;
+}
+
+export interface TraceparentResult {
+  parsed: W3CTraceparent;
+  propagatedHeader: string;
+  childSpanId: string;
+}
+
+export interface GeneratedContext {
+  traceId: string;
+  spanId: string;
+  traceparent: string;
+}
+
+export async function fetchTraces(params?: TraceFilters): Promise<TraceSummary[]> {
   const query = new URLSearchParams();
   if (params?.service) query.set('service', params.service);
   if (params?.minDuration !== undefined) query.set('minDuration', String(params.minDuration));
@@ -55,11 +70,7 @@ export async function fetchTopology(): Promise<ServiceTopology> {
   return json.data;
 }
 
-export async function simulateTraffic(payload: {
-  flowType?: 'checkout' | 'auth' | 'search' | 'batch';
-  injectAnomaly?: boolean;
-  batchCount?: number;
-}): Promise<TraceDetail | TraceSummary[]> {
+export async function simulateTraffic(payload: SimulatePayload): Promise<TraceDetail | TraceSummary[]> {
   const res = await fetch(`${API_BASE}/simulate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -70,22 +81,14 @@ export async function simulateTraffic(payload: {
   return json.data;
 }
 
-export async function parseTraceparentHeader(header: string): Promise<{
-  parsed: W3CTraceparent;
-  propagatedHeader: string;
-  childSpanId: string;
-}> {
+export async function parseTraceparentHeader(header: string): Promise<TraceparentResult> {
   const res = await fetch(`${API_BASE}/w3c/parse?traceparent=${encodeURIComponent(header)}`);
   const json = await res.json();
   if (!json.success || !json.data) throw new Error(json.error || 'Failed to parse traceparent');
   return json.data;
 }
 
-export async function generateW3CContext(): Promise<{
-  traceId: string;
-  spanId: string;
-  traceparent: string;
-}> {
+export async function generateW3CContext(): Promise<GeneratedContext> {
   const res = await fetch(`${API_BASE}/w3c/context`);
   const json = await res.json();
   if (!json.success || !json.data) throw new Error(json.error || 'Failed to generate context');
