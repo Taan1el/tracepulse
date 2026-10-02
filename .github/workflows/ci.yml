@@ -46,3 +46,21 @@ jobs:
 
       - name: Build container image
         run: docker build -t tracepulse:ci .
+      - name: Run the container and check the UI
+        run: |
+          docker run -d --name tracepulse -p 127.0.0.1:4000:4000 tracepulse:ci
+          ok=0
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/ -o index.html; then ok=1; break; fi
+            sleep 2
+          done
+          test "$ok" = "1"
+          grep -qi '<div id="root"' index.html
+          healthy=0
+          for p in /health /api/health /healthz; do
+            if curl -fsS http://127.0.0.1:4000$p > /dev/null; then echo "health ok at $p"; healthy=1; break; fi
+          done
+          test "$healthy" = "1"
+      - name: Container logs
+        if: always()
+        run: docker logs tracepulse || true
