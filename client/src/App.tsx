@@ -1,52 +1,48 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import './App.css';
-import type {
-  TraceSummary,
-  TraceDetail,
-  ServiceMetric,
-  ServiceTopology,
-} from '../../shared/types.js';
-import {
-  fetchTraces,
-  fetchTraceById,
-  fetchServices,
-  fetchTopology,
-} from './services/api.js';
+import { TriangleAlert } from 'lucide-react';
+import type { TraceSummary, TraceDetail, ServiceMetric, ServiceTopology } from '../../shared/types.js';
+import { fetchTraces, fetchTraceById, fetchServices, fetchTopology } from './services/index.js';
+import { DemoBanner } from './components/DemoBanner.js';
 import { Header } from './components/Header.js';
-import { MetricsRibbon } from './components/MetricsRibbon.js';
-import { TraceFilterBar } from './components/TraceFilterBar.js';
-import { TraceListTable } from './components/TraceListTable.js';
-import { TraceWaterfallView } from './components/TraceWaterfallView.js';
-import { ServiceMetricsTable } from './components/ServiceMetricsTable.js';
-import { ServiceTopologyGraph } from './components/ServiceTopologyGraph.js';
-import { W3CModal } from './components/W3CModal.js';
-import { TrafficSimModal } from './components/TrafficSimModal.js';
+import { StatsStrip } from './components/StatsStrip.js';
+import { TraceFilters } from './components/TraceFilters.js';
+import { TraceTable } from './components/TraceTable.js';
+import { Waterfall } from './components/Waterfall.js';
+import { ServicesTable } from './components/ServicesTable.js';
+import { ServiceCalls } from './components/ServiceCalls.js';
+import { TrafficDialog } from './components/TrafficDialog.js';
+import { TraceparentDialog } from './components/TraceparentDialog.js';
+import { formatCount } from './utils/pluralize.js';
+import './App.css';
+
+type View = 'traces' | 'services' | 'calls';
+
+const VIEWS: Array<{ id: View; label: string }> = [
+  { id: 'traces', label: 'Traces' },
+  { id: 'services', label: 'Services' },
+  { id: 'calls', label: 'Service calls' },
+];
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'explorer' | 'metrics' | 'topology'>('explorer');
+  const [view, setView] = useState<View>('traces');
 
-  // Traces & Selected Detail
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [selectedTraceDetail, setSelectedTraceDetail] = useState<TraceDetail | null>(null);
 
-  // Metrics & Topology
   const [services, setServices] = useState<ServiceMetric[]>([]);
   const [topology, setTopology] = useState<ServiceTopology | null>(null);
 
-  // Filters
   const [selectedService, setSelectedService] = useState('');
   const [minDuration, setMinDuration] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modals & Loaders
   const [loadingTraces, setLoadingTraces] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [isTrafficModalOpen, setIsTrafficModalOpen] = useState(false);
-  const [isW3CModalOpen, setIsW3CModalOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<'traffic' | 'traceparent' | null>(null);
 
-  // Load trace list
   const loadTraces = useCallback(async () => {
     try {
       setLoadingTraces(true);
@@ -56,145 +52,175 @@ export const App: React.FC = () => {
         hasError: errorsOnly ? true : undefined,
       });
       setTraces(data);
-
-      // Auto-select first trace if none selected or previous is gone
-      if (data.length > 0 && (!selectedTraceId || !data.some((t) => t.id === selectedTraceId))) {
-        setSelectedTraceId(data[0].id);
-      } else if (data.length === 0) {
-        setSelectedTraceId(null);
-        setSelectedTraceDetail(null);
-      }
+      setError(null);
+      // Keep the current selection while it is still listed, otherwise open the newest trace.
+      setSelectedTraceId((current) =>
+        data.length === 0 ? null : current && data.some((t) => t.id === current) ? current : data[0].id
+      );
     } catch (err) {
       console.error('Failed to load traces:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load traces');
     } finally {
       setLoadingTraces(false);
     }
-  }, [selectedService, minDuration, errorsOnly, selectedTraceId]);
+  }, [selectedService, minDuration, errorsOnly]);
 
-  // Load auxiliary APM metrics and topology
   const loadMetricsAndTopology = useCallback(async () => {
     try {
       const [svcData, topoData] = await Promise.all([fetchServices(), fetchTopology()]);
       setServices(svcData);
       setTopology(topoData);
     } catch (err) {
-      console.error('Failed to load APM metrics/topology:', err);
+      console.error('Failed to load service metrics:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load service metrics');
     }
   }, []);
 
-  // Initial load
   useEffect(() => {
     loadTraces();
-    loadMetricsAndTopology();
-  }, [loadTraces, loadMetricsAndTopology]);
+  }, [loadTraces]);
 
-  // Load selected trace details
+  useEffect(() => {
+    loadMetricsAndTopology();
+  }, [loadMetricsAndTopology]);
+
   useEffect(() => {
     if (!selectedTraceId) {
       setSelectedTraceDetail(null);
       return;
     }
 
-    let isMounted = true;
-    const fetchDetail = async () => {
-      try {
-        setLoadingDetail(true);
-        const detail = await fetchTraceById(selectedTraceId);
-        if (isMounted) setSelectedTraceDetail(detail);
-      } catch (err) {
+    let current = true;
+    setLoadingDetail(true);
+    fetchTraceById(selectedTraceId)
+      .then((detail) => {
+        if (current) setSelectedTraceDetail(detail);
+      })
+      .catch((err) => {
         console.error('Failed to fetch trace detail:', err);
-      } finally {
-        if (isMounted) setLoadingDetail(false);
-      }
-    };
+        if (current) setSelectedTraceDetail(null);
+      })
+      .finally(() => {
+        if (current) setLoadingDetail(false);
+      });
 
-    fetchDetail();
     return () => {
-      isMounted = false;
+      current = false;
     };
   }, [selectedTraceId]);
 
-  // Refresh all
   const handleRefresh = () => {
     loadTraces();
     loadMetricsAndTopology();
   };
 
-  // Filter traces by search query
-  const filteredTraces = traces.filter((t) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      t.id.toLowerCase().includes(q) ||
-      t.rootSpanName.toLowerCase().includes(q) ||
-      t.services.some((s) => s.toLowerCase().includes(q))
-    );
-  });
-
-  const availableServiceNames = services.map((s) => s.serviceName);
+  const query = searchQuery.trim().toLowerCase();
+  const visibleTraces = traces.filter(
+    (t) =>
+      !query ||
+      t.id.toLowerCase().includes(query) ||
+      t.rootSpanName.toLowerCase().includes(query) ||
+      t.services.some((s) => s.toLowerCase().includes(query))
+  );
 
   return (
     <div className="app-container">
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenTrafficModal={() => setIsTrafficModalOpen(true)}
-        onOpenW3CModal={() => setIsW3CModalOpen(true)}
-        totalTraces={traces.length}
-      />
+      <DemoBanner onReset={handleRefresh} />
+      <Header onOpenTraffic={() => setDialog('traffic')} onOpenTraceparent={() => setDialog('traceparent')} />
 
-      <main className="main-content">
-        <MetricsRibbon traces={traces} services={services} />
+      <main className="app-main">
+        {error && (
+          <div className="alert" role="alert">
+            <span className="alert-message">
+              <TriangleAlert size={16} strokeWidth={1.75} aria-hidden="true" /> {error}
+            </span>
+            <button type="button" className="btn btn-secondary" onClick={handleRefresh}>
+              Retry
+            </button>
+          </div>
+        )}
 
-        {activeTab === 'explorer' && (
-          <>
-            <TraceFilterBar
-              services={availableServiceNames}
-              selectedService={selectedService}
-              onSelectService={setSelectedService}
-              minDuration={minDuration}
-              onMinDurationChange={setMinDuration}
-              errorsOnly={errorsOnly}
-              onToggleErrorsOnly={setErrorsOnly}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onRefresh={handleRefresh}
-            />
+        <StatsStrip traces={traces} services={services} />
 
-            <div className="split-layout">
-              <TraceListTable
-                traces={filteredTraces}
-                selectedTraceId={selectedTraceId}
-                onSelectTrace={setSelectedTraceId}
-                loading={loadingTraces}
+        <div>
+          <nav className="view-nav" aria-label="Views">
+            {VIEWS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className="view-btn"
+                aria-current={view === v.id ? 'page' : undefined}
+                onClick={() => setView(v.id)}
+              >
+                {v.id === 'traces' ? `${v.label} (${traces.length})` : v.label}
+              </button>
+            ))}
+          </nav>
+
+          {view === 'traces' && (
+            <div className="view-body">
+              <TraceFilters
+                services={services.map((s) => s.serviceName)}
+                selectedService={selectedService}
+                onSelectService={setSelectedService}
+                minDuration={minDuration}
+                onMinDurationChange={setMinDuration}
+                errorsOnly={errorsOnly}
+                onToggleErrorsOnly={setErrorsOnly}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onRefresh={handleRefresh}
               />
-              <TraceWaterfallView
-                trace={selectedTraceDetail}
-                loading={loadingDetail}
-              />
+
+              <div className="split-layout">
+                <div className="split-left">
+                  <h2 className="section-heading">Traces</h2>
+                  <p className="section-description">
+                    {query
+                      ? `${formatCount(visibleTraces.length, 'match', 'matches')} among ${formatCount(traces.length, 'loaded trace')}.`
+                      : 'Newest first. Pick one to see where its time went.'}
+                  </p>
+                  <TraceTable
+                    traces={visibleTraces}
+                    selectedTraceId={selectedTraceId}
+                    onSelectTrace={setSelectedTraceId}
+                    loading={loadingTraces}
+                  />
+                </div>
+                <div className="split-right">
+                  <Waterfall key={selectedTraceDetail?.summary.id ?? 'none'} trace={selectedTraceDetail} loading={loadingDetail} />
+                </div>
+              </div>
             </div>
-          </>
-        )}
+          )}
 
-        {activeTab === 'metrics' && (
-          <ServiceMetricsTable metrics={services} loading={false} />
-        )}
+          {view === 'services' && (
+            <div className="view-body">
+              <h2 className="section-heading">Service latency</h2>
+              <p className="section-description">Percentiles and error rate for the spans each service recorded.</p>
+              <ServicesTable metrics={services} />
+            </div>
+          )}
 
-        {activeTab === 'topology' && (
-          <ServiceTopologyGraph topology={topology} loading={false} />
-        )}
+          {view === 'calls' && (
+            <div className="view-body">
+              <h2 className="section-heading">Service calls</h2>
+              <p className="section-description">Which service calls which, found from parent and child spans in different services.</p>
+              <ServiceCalls topology={topology} />
+            </div>
+          )}
+        </div>
       </main>
 
-      <W3CModal
-        isOpen={isW3CModalOpen}
-        onClose={() => setIsW3CModalOpen(false)}
-      />
+      <footer className="app-footer">
+        <span>TracePulse 1.0.0, MIT license</span>
+        <a href="https://github.com/Taan1el/tracepulse" target="_blank" rel="noreferrer">
+          Source on GitHub
+        </a>
+      </footer>
 
-      <TrafficSimModal
-        isOpen={isTrafficModalOpen}
-        onClose={() => setIsTrafficModalOpen(false)}
-        onTrafficGenerated={handleRefresh}
-      />
+      {dialog === 'traffic' && <TrafficDialog onClose={() => setDialog(null)} onGenerated={handleRefresh} />}
+      {dialog === 'traceparent' && <TraceparentDialog onClose={() => setDialog(null)} />}
     </div>
   );
 };
