@@ -220,6 +220,8 @@ Serves the built client and the API at **http://localhost:4000**. The SQLite fil
 - Only the `traceparent` header is handled, not `tracestate`. Spans are not read from an OpenTelemetry exporter directly; they are posted in the JSON shape described above.
 - The Pages demo keeps its data in memory for the page's lifetime. A reload restores the same sample data.
 
+Decision records: [SQLite storage](docs/adr/001-native-sqlite-wal-and-relational-span-storage.md), [W3C context and span trees](docs/adr/002-w3c-tracecontext-propagation-and-dag-span-tree-reconstruction.md), [percentiles and service calls](docs/adr/003-latency-percentiles-and-service-topology-derivation.md).
+
 ## Roadmap
 
 - Delete or expire old traces.
