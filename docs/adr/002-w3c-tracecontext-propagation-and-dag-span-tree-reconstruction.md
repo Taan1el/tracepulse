@@ -14,8 +14,8 @@ Distributed tracing systems must be interoperable with the broader cloud-native 
 2. **Hierarchical DAG Span Tree & Bottleneck Analysis**:
    - Spans are assembled into a hierarchical tree based on `parentSpanId`.
    - The tree builder calculates relative time offsets from the trace start time (`offsetMs`) and duration proportions (`durationPercent`).
-   - Automated bottleneck heuristics inspect child spans to detect the critical path contributor taking the largest absolute time (especially >40% of transaction duration), flagging it with an alert indicator.
+   
 
 ## Consequences
-- **Positive**: 100% interoperable with OpenTelemetry instrumentation agents, standard HTTP headers, and microservice gateways.
-- **Positive**: Visual Gantt waterfall chart directly correlates frontend user latency to specific downstream microservices or database queries.
+- **Positive**: The header format follows the W3C Trace Context fields (version, trace ID, parent ID, flags). Only the `traceparent` header is handled, not `tracestate`.
+- **Positive**: The waterfall shows each span's offset and duration within the trace, so a slow downstream service or query is visible next to its parent.

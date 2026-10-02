@@ -1,127 +1,107 @@
-# TracePulse 🔍⚡
-> **Distributed Tracing, OpenTelemetry Spans & Microservice Performance Observability Engine**  
-> *Engineered for High-Throughput APM, Latency Percentile Analytics (P50/P90/P95/P99) & Service Dependency Graphing*
+# TracePulse
 
-[![CI Pipeline](https://img.shields.io/badge/CI-Passing-10b981.svg?style=flat-square)](#)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6.svg?style=flat-square)](#)
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933.svg?style=flat-square)](#)
-[![Database](https://img.shields.io/badge/Database-SQLite%20WAL%20(Native)-003B57.svg?style=flat-square)](#)
-[![React](https://img.shields.io/badge/React-19-61dafb.svg?style=flat-square)](#)
-[![W3C TraceContext](https://img.shields.io/badge/Standard-W3C%20TraceContext-ff6600.svg?style=flat-square)](#)
-[![Docker](https://img.shields.io/badge/Docker-Compose%20Ready-2496ed.svg?style=flat-square)](#)
+TracePulse is a trace viewer. It ingests spans over a REST API, stores them in SQLite, and shows each trace as a waterfall, with latency percentiles per service and a table of which services call each other. It is meant for people who run a handful of services and want to read their traces without setting up a tracing backend.
 
----
+[![CI](https://github.com/Taan1el/tracepulse/actions/workflows/ci.yml/badge.svg)](https://github.com/Taan1el/tracepulse/actions/workflows/ci.yml)
+[![Pages](https://github.com/Taan1el/tracepulse/actions/workflows/pages.yml/badge.svg)](https://github.com/Taan1el/tracepulse/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## ⚡ 2-Minute Product Overview
-**TracePulse** is a production-grade distributed tracing and Application Performance Monitoring (APM) platform. Designed for modern microservice architectures, it ingests OpenTelemetry-compatible span payloads, implements the W3C Trace Context (`traceparent`) standard, computes statistical latency percentiles (P50, P90, P95 SLA, P99 tail), reconstructs execution DAGs into interactive Gantt waterfall timelines with bottleneck detection, and automatically maps service-to-service communication topologies.
+**Live demo:** https://taan1el.github.io/tracepulse/
 
-### Core Capabilities
-1. **W3C TraceContext Ingestion & Propagation Engine**: Standard-compliant validation and parsing for `00-{trace_id}-{span_id}-{flags}` headers. Generates downstream child contexts to correlate cross-service workflows.
-2. **Interactive Trace Waterfall Timeline**: Gantt-style visualizer breaking down parent-child spans with service color tags, relative offsets, and automated bottleneck heuristics (`🔥 BOTTLENECK`) highlighting critical path delays.
-3. **Statistical Latency Percentiles (P50/P90/P95/P99)**: In-engine numeric quantile calculations providing visibility into typical response times vs tail latency outliers without external big-data dependencies.
-4. **Dynamic Service Topology Graph (DAG)**: Automated dependency extraction discovering cross-service boundaries from span traces, mapped into an interactive SVG topology canvas with call volumes and latency metrics.
-5. **Synthetic Traffic & Failure Simulator**: Built-in traffic generator capable of dispatching realistic eCommerce checkout, authentication, and search flows with configurable latency anomalies and HTTP 504 timeouts.
-6. **Native Relational Persistence**: Powered by Node 24 native `node:sqlite` in WAL mode, delivering sub-millisecond query performance and zero-dependency local execution.
+The demo runs entirely in your browser: the same trace-building, percentile and dependency code the server uses runs against 15 generated sample traces (the same 15 every visit), so it works with no backend.
 
----
+## Screenshot
 
-## 🏛️ System Architecture
+![Trace table next to the waterfall of the selected trace, with one span expanded](docs/screenshots/01-dashboard.png)
 
-```mermaid
-graph TD
-    subgraph Client ["Frontend (React 19 + TypeScript + Vite)"]
-        UI[TracePulse Operations Dashboard]
-        Explorer[Trace Explorer & Filter Bar]
-        Waterfall[Interactive Gantt Waterfall]
-        Matrix[Service APM Percentiles Matrix]
-        Topology[SVG Service Topology Graph]
-        W3CMod[W3C Context Inspector Modal]
-        SimMod[Synthetic Traffic Simulator Modal]
+More screenshots: [latency per service](docs/screenshots/02-services.png), [calls between services](docs/screenshots/03-calls.png), [the app at phone width](docs/screenshots/04-mobile.png).
 
-        UI --> Explorer
-        Explorer --> Waterfall
-        UI --> Matrix
-        UI --> Topology
-        UI --> W3CMod
-        UI --> SimMod
-    end
+## Features
 
-    subgraph Server ["Backend (Node.js 24 + Express + Native SQLite WAL)"]
-        API[Express REST Gateway /api]
-        Ingest[Span Ingestion Service]
-        TreeBuilder[DAG Span Tree Reconstructor]
-        W3CParser[W3C TraceContext Parser]
-        PercentileCalc[Quantile Math Engine]
-        GraphService[Service Topology Extractor]
-        TrafficSim[Synthetic Microservice Simulator]
+- **Span ingestion**: `POST /api/traces` takes OpenTelemetry-style span records, validates the whole batch, and stores the trace and its spans in one transaction.
+- **Trace table and waterfall**: traces newest first, filterable by service, minimum duration and error spans, with a text search over the loaded traces. The waterfall is a flat bar diagram of every span's offset and duration, with a text summary, and each span expands to its IDs, attributes and events. The longest non-root span is marked as the longest child.
+- **Latency per service**: average, P50, P90, P95 and P99 plus error rate for every service, computed over all stored spans.
+- **Service calls**: a table of caller, callee, call count, average duration and errors, found from parent and child spans that belong to different services.
+- **W3C `traceparent` tools**: parse and validate a header, get the header a downstream call would send, or generate a fresh context.
+- **Traffic generator**: creates sample checkout, sign-in and search traces, with an option to make a trace fail.
+- **Demo mode**: a static build for GitHub Pages with deterministic sample data and a "Reset sample data" control.
 
-        API --> Ingest
-        API --> TreeBuilder
-        API --> W3CParser
-        API --> PercentileCalc
-        API --> GraphService
-        API --> TrafficSim
-    end
-
-    subgraph Storage ["Relational Storage"]
-        DB[(SQLite WAL Database)]
-        T[traces]
-        S[spans (Indexed by trace_id & service)]
-        
-        Ingest --> T
-        Ingest --> S
-    end
-
-    UI <-->|REST API /api/traces| API
-    SimMod -->|POST /api/simulate| TrafficSim
-```
-
----
-
-## 🚀 Quick Start (Zero-Config)
+## Getting started
 
 ### Prerequisites
-- Node.js 24+ (uses native `node:sqlite`)
-- npm 10+
+- Node.js 22.13 or newer (`node:sqlite` is used without a flag from 22.13; CI runs Node 22 and 24)
+- npm 10 or newer
 
-### Local Development
+### Install
 ```bash
-# 1. Clone repository
 git clone https://github.com/Taan1el/tracepulse.git
 cd tracepulse
-
-# 2. Install workspace dependencies
 npm install
+```
 
-# 3. Start backend API and frontend Vite dev server concurrently
+### Run
+```bash
 npm run dev
-
-# Backend runs at:  http://localhost:4000
-# Frontend runs at: http://localhost:5173
 ```
+The API listens on http://localhost:4000 and the Vite dev server on http://localhost:5173 (it proxies `/api`). The first start seeds 15 sample traces into `server/data/tracepulse.db`.
 
-### Running Automated Tests
+For a production-style run, build once and start the server, which also serves the built client:
 ```bash
-# Run all unit and integration tests (18 passing across server and client)
-npm test
-
-# Run TypeScript type-checks and linting across workspaces
-npm run lint
-
-# Build production bundles
 npm run build
+npm start --workspace=server   # http://localhost:4000
 ```
 
-### Docker Deployment
-```bash
-# Spin up production container with persistent SQLite volume
-docker compose up --build
-# Open http://localhost:4000 in your browser
+### Environment variables
+
+| Variable | Where | Default | Purpose |
+|---|---|---|---|
+| `PORT` | server | `4000` | Port the Express server listens on. Invalid values fall back to the default. |
+| `VITE_API_TARGET` | client dev server | `http://localhost:4000` | Where the Vite dev server proxies `/api`. Set it in `client/.env.local`. |
+
+Copy `server/.env.example` or `client/.env.example` as a starting point. The server does not load `.env` files itself; export the variable or run `node --env-file=.env server/dist/server/src/index.js`.
+
+## Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | API and Vite dev server together |
+| `npm run build` | Type-check and build the server (`server/dist`) and client (`client/dist`) |
+| `npm run build:pages` | Build the client in demo mode with the `/tracepulse/` base path |
+| `npm test` | Server tests, then client tests |
+| `npm run lint` | `tsc --noEmit` for both workspaces |
+| `npm start --workspace=server` | Run the built server |
+
+## How it works
+
+1. A span batch is validated in full by `shared/span-input.ts`. Nothing is written if any span is invalid.
+2. `shared/trace-tree.ts` links spans by `parentSpanId`, sorts siblings by start time, computes each span's offset and share of the trace, and flags the longest non-root span. Spans whose parent is missing become roots, so partial traces still load.
+3. `shared/trace-builder.ts` produces the trace summary (root, duration, services, error flag) that the repository stores in `traces`, with spans in `spans`.
+4. `shared/analytics.ts` turns stored spans into per-service metrics and service-to-service edges, and `shared/percentile.ts` computes percentiles by linear interpolation between ranks.
+5. The client calls the REST API. In demo mode `client/src/services/demoApi.ts` answers the same calls in the browser using the same shared code, and `shared/flows.ts` generates the sample traces from a seeded random generator.
+
+The API and the demo are chosen in one place, `client/src/services/index.ts`.
+
+### Project layout
+
+```
+tracepulse/
+  client/                 React 19 + Vite app
+    src/components/       Header, StatsStrip, TraceFilters, TraceTable, Waterfall, ServicesTable,
+                          ServiceCalls, TrafficDialog, TraceparentDialog, DemoBanner, Modal
+    src/services/         api.ts (REST), demoApi.ts (browser), index.ts (the switch)
+    src/styles/           tokens.css (colors, fonts)
+  server/                 Express API
+    src/app.ts            Express app: CORS, JSON parsing, API mount, static client build
+    src/controllers/      Request parsing and response shaping
+    src/repositories/     SQLite access
+    src/services/         Ingestion, simulation
+    test/                 API and validation tests
+  shared/                 Pure logic used by the server and the demo, plus shared types
+  docs/adr/               Architecture decision records
+  docs/screenshots/       README screenshots
 ```
 
----
-
-## 📡 REST API Reference
+## API reference
 
 JSON request bodies are limited to 10 MB. Malformed JSON (including top-level
 scalars or null) returns HTTP 400; oversized bodies return HTTP 413; unsupported
@@ -131,34 +111,17 @@ before ingestion or simulation. These errors do not echo or log request bodies.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/health` | Healthcheck and engine status |
-| `POST` | `/api/traces` | Ingest OpenTelemetry-compatible span records |
-| `GET` | `/api/traces` | Query traces with filters (`service`, `minDuration`, `hasError`, `limit`) |
-| `GET` | `/api/traces/:id` | Retrieve full trace details with reconstructed hierarchical span tree |
-| `GET` | `/api/services` | Retrieve service APM metrics (P50, P90, P95, P99, error rate, throughput) |
-| `GET` | `/api/services/graph` | Derive service dependency topology graph (nodes and directed edges) |
-| `POST` | `/api/simulate` | Trigger synthetic multi-microservice trace traffic (`checkout`, `auth`, `batch`) |
-| `GET` | `/api/w3c/parse` | Parse and validate W3C `traceparent` header and generate next child span |
-| `GET` | `/api/w3c/context` | Generate new valid W3C TraceContext tuple (`traceId`, `spanId`, `traceparent`) |
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/traces` | Ingest spans (`{ "spans": [...] }`) |
+| `GET` | `/api/traces` | List traces (`service`, `minDuration`, `maxDuration`, `hasError`, `limit`) |
+| `GET` | `/api/traces/:id` | One trace with its span tree |
+| `GET` | `/api/services` | Per-service request count, errors and latency percentiles |
+| `GET` | `/api/services/graph` | Service nodes and call edges |
+| `POST` | `/api/simulate` | Generate sample traces |
+| `GET` | `/api/w3c/parse` | Parse a `traceparent` (header or `?traceparent=`) and return the next header |
+| `GET` | `/api/w3c/context` | Generate a new `traceparent` |
 
----
-
-## 📐 Architecture Decision Records (ADRs)
-
-Detailed architectural rationale:
-- [ADR 001: Native SQLite WAL and Relational Span Storage Architecture](docs/adr/001-native-sqlite-wal-and-relational-span-storage.md)
-- [ADR 002: W3C Trace Context Propagation and DAG Span Tree Reconstruction](docs/adr/002-w3c-tracecontext-propagation-and-dag-span-tree-reconstruction.md)
-- [ADR 003: Real-Time Latency Percentiles and Service Topology Derivation](docs/adr/003-real-time-latency-percentiles-and-service-topology-derivation.md)
-
----
-
-## 🧪 Verification & Quality Checklist
-
-- [x] **18 Automated Tests Passing** (12 backend integration + 6 frontend component tests).
-- [x] **Zero External Database Overhead**: Native Node 24 SQLite WAL engine with sub-millisecond query execution.
-- [x] **OpenTelemetry & W3C Compliant**: Strict validation of 32-hex trace IDs and 16-hex span IDs.
-- [x] **Full TypeScript Strict Compliance**: End-to-end type safety sharing `shared/types.ts` between client and server.
-- [x] **Multi-Stage Docker & Compose**: Production container with health check and persistent data volume.
+A service's "request count" is its number of stored spans. Responses are `{ "success": true, "data": ... }` or `{ "success": false, "error": "..." }`; unexpected failures return a fixed message and the cause is logged on the server.
 
 ### Span ingestion
 
@@ -227,3 +190,43 @@ independently of `injectAnomaly`. A count of one retains single-flow mode unless
 Invalid option values or array bodies return HTTP 400 with
 `{ "success": false, "error": "..." }` before generating or storing any traces.
 Unexpected generation or storage failures return HTTP 500.
+
+## Testing
+
+- **Server** (`server/test`, Vitest and `supertest`, in-memory SQLite): every route including the 404 and empty states, input validation for spans, queries, simulation options and JSON bodies, cyclic and deep span graphs, exact service filtering, W3C parsing, percentile and tree logic, shared analytics and flow builders, and that error responses do not leak internal detail.
+- **Client** (`client/src/test`, React Testing Library with a mocked `fetch`): the stats strip, trace table, selecting a trace, span details, filters sent to the API, search, the services and calls views, error and retry, both dialogs including keyboard behavior, and the demo bar.
+- **Demo data layer** (`client/src/test/demoApi.test.ts`): deterministic sample data, filters, trace lookup, metrics and edges, simulation, reset, and `traceparent` handling.
+
+Tests use no real timers or network. Run them with `npm test`.
+
+## Deployment
+
+### Docker
+```bash
+docker compose up --build
+```
+Serves the built client and the API at **http://localhost:4000**. The SQLite file lives in the `tracepulse-data` volume mounted at `/app/data`, and the container runs as the unprivileged `node` user. Docker was not available while preparing this repository, so the image is only verified by the `docker` job in CI (`docker build`); if `docker compose up` does not work for you, please open an issue.
+
+### GitHub Pages
+`.github/workflows/pages.yml` runs `npm run build:pages` and publishes `client/dist` on every push to `main`. The deploy job is skipped while the repository is private and starts working once it is public.
+
+## Design notes and limitations
+
+- There is no authentication and no rate limit. Anyone who can reach the API can ingest, simulate or read traces, and request bodies up to 10 MB are accepted. Do not expose it to the public internet as-is.
+- Storage is one SQLite file written by one process. Nothing is ever deleted, so the file only grows. Ingestion and query speed have not been measured.
+- Service metrics are computed by reading every stored span on each request, which is fine for small data sets and will slow down as the data grows. Percentiles are over all stored spans, not a time window, and no throughput figure is reported.
+- Ingesting a trace ID that already exists replaces that trace. Span IDs are expected to be unique across traces.
+- The longest-child marker compares durations of non-root spans. It is not a critical-path analysis.
+- Only the `traceparent` header is handled, not `tracestate`. Spans are not read from an OpenTelemetry exporter directly; they are posted in the JSON shape described above.
+- The Pages demo keeps its data in memory for the page's lifetime. A reload restores the same sample data.
+
+## Roadmap
+
+- Delete or expire old traces.
+- Time-window filters and a real throughput figure.
+- An OTLP/HTTP receiver so exporters can send spans directly.
+- Authentication for the ingestion endpoint.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

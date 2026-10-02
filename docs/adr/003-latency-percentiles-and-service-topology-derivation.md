@@ -1,4 +1,4 @@
-# ADR 003: Real-Time Latency Percentiles and Service Topology Derivation
+# ADR 003: Latency Percentiles and Service Topology Derivation
 
 ## Status
 Accepted
@@ -14,12 +14,12 @@ Additionally, microservice architectures evolve continuously; statically configu
 ## Decision
 1. **In-Engine Statistical Quantile Computation**:
    - Implement numeric interpolation quantile calculation without external heavy libraries.
-   - Aggregate spans by `service_name` to report accurate P50, P90, P95, and P99 metrics along with error rates and throughput (RPS).
+   - Aggregate spans by `service_name` to report accurate P50, P90, P95, and P99 metrics along with error rates. Throughput is not reported: stored spans carry no ingestion window, so a rate would be invented.
 
 2. **Dynamic Service Topology Extraction**:
    - Query parent-child span pairs where `parent.service_name != child.service_name`.
    - Aggregate call counts, error rates, and average transition latencies.
-   - Project the resulting graph into an interactive SVG Directed Acyclic Graph (DAG) visualizing service interactions, edge volumes, and health indicators.
+   - Present the result as a table of caller, callee, call count, average duration and error count.
 
 ## Consequences
 - **Positive**: Actionable APM insights allowing SREs and developers to spot degraded services before cascading outages occur.
