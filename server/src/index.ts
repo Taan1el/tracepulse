@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
+const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+const PORT = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 4000;
 
 const { app } = createApp();
 

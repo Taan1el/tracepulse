@@ -75,9 +75,9 @@ export function createApp(dbPath?: string, shouldSeed = true): AppContext {
   }
 
   // Global error handler
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Unhandled server error:', err);
-    res.status(500).json({ success: false, error: err.message || 'Internal Server Error' });
+    res.status(500).json({ success: false, error: 'Internal Server Error' });
   });
 
   return {

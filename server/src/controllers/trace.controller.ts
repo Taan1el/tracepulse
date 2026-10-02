@@ -1,16 +1,22 @@
 import { Request, Response } from 'express';
 import { TraceService } from '../services/trace.service.js';
-import { SpanInputError } from '../services/span-input.js';
+import { SpanInputError } from '../../../shared/span-input.js';
 import { SimulatorService } from '../services/simulator.service.js';
 import { parseTraceQuery, TraceQueryError } from './trace-query.js';
 import { parseSimulationRequest, SimulationRequestError } from './simulation-request.js';
-import { parseTraceparent, formatTraceparent, generateTraceId, generateSpanId } from '../services/traceparent.js';
+import { parseTraceparent, formatTraceparent, generateTraceId, generateSpanId } from '../../../shared/traceparent.js';
 
 export class TraceController {
   constructor(
     private traceService: TraceService,
     private simulatorService: SimulatorService
   ) {}
+
+  // Log the cause server-side and send a fixed message, so internals never reach the client.
+  private fail(res: Response, message: string, err: unknown): void {
+    console.error(`[TracePulse] ${message}:`, err);
+    res.status(500).json({ success: false, error: message });
+  }
 
   health = (_req: Request, res: Response): void => {
     res.json({
@@ -31,8 +37,11 @@ export class TraceController {
       const result = this.traceService.ingestSpans(spans);
       res.status(201).json({ success: true, data: result });
     } catch (err: unknown) {
-      res.status(err instanceof SpanInputError ? 400 : 500)
-        .json({ success: false, error: err instanceof SpanInputError ? err.message : 'Ingestion failed' });
+      if (err instanceof SpanInputError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      this.fail(res, 'Ingestion failed', err);
     }
   };
 
@@ -41,9 +50,12 @@ export class TraceController {
       const traces = this.traceService.queryTraces(parseTraceQuery(req.query));
 
       res.json({ success: true, data: traces });
-    } catch (err: any) {
-      res.status(err instanceof TraceQueryError ? 400 : 500)
-        .json({ success: false, error: err.message || 'Query failed' });
+    } catch (err: unknown) {
+      if (err instanceof TraceQueryError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      this.fail(res, 'Query failed', err);
     }
   };
 
@@ -58,8 +70,8 @@ export class TraceController {
       }
 
       res.json({ success: true, data: trace });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || 'Failed to retrieve trace' });
+    } catch (err: unknown) {
+      this.fail(res, 'Failed to retrieve trace', err);
     }
   };
 
@@ -67,8 +79,8 @@ export class TraceController {
     try {
       const metrics = this.traceService.getServiceMetrics();
       res.json({ success: true, data: metrics });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || 'Failed to retrieve services' });
+    } catch (err: unknown) {
+      this.fail(res, 'Failed to retrieve services', err);
     }
   };
 
@@ -76,8 +88,8 @@ export class TraceController {
     try {
       const topology = this.traceService.getServiceTopology();
       res.json({ success: true, data: topology });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || 'Failed to retrieve topology' });
+    } catch (err: unknown) {
+      this.fail(res, 'Failed to retrieve topology', err);
     }
   };
 
@@ -93,9 +105,12 @@ export class TraceController {
         const trace = this.simulatorService.simulateFlow(flowType, injectAnomaly);
         res.json({ success: true, data: trace });
       }
-    } catch (err: any) {
-      res.status(err instanceof SimulationRequestError ? 400 : 500)
-        .json({ success: false, error: err.message || 'Simulation failed' });
+    } catch (err: unknown) {
+      if (err instanceof SimulationRequestError) {
+        res.status(400).json({ success: false, error: err.message });
+        return;
+      }
+      this.fail(res, 'Simulation failed', err);
     }
   };
 
@@ -128,8 +143,8 @@ export class TraceController {
           childSpanId,
         },
       });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
+    } catch (err: unknown) {
+      this.fail(res, 'Failed to parse traceparent', err);
     }
   };
 
