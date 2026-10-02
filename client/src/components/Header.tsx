@@ -9,11 +9,9 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onOpenTraffic, onOpenTraceparent }) => (
   <header className="app-header">
     <div className="header-inner">
-      <div>
+      <div className="brand">
         <h1 className="brand-name">TracePulse</h1>
-        <p className="brand-subtitle">
-          Read distributed traces as waterfalls, compare latency per service, and see which services call each other.
-        </p>
+        <p className="brand-subtitle">Read a trace as a waterfall, then check latency per service.</p>
       </div>
 
       <div className="header-actions">

@@ -17,33 +17,25 @@ export const StatsStrip: React.FC<StatsStripProps> = ({ traces, services }) => {
     null
   );
 
-  return (
-    <div className="stats-strip">
-      <div className="stat-cell">
-        <span className="stat-label">Traces loaded</span>
-        <span className="stat-value">{traces.length}</span>
-        <span className="stat-note">{formatCount(services.length, 'service')}</span>
-      </div>
-
-      <div className="stat-cell">
-        <span className="stat-label">Traces with errors</span>
-        <span className={`stat-value ${errorRate > 10 ? 'is-bad' : ''}`}>{`${errorRate.toFixed(1)}%`}</span>
-        <span className="stat-note">{`${failed} of ${traces.length}`}</span>
-      </div>
-
-      <div className="stat-cell">
-        <span className="stat-label">Mean trace duration</span>
-        <span className="stat-value">{`${meanMs.toFixed(1)} ms`}</span>
-        <span className="stat-note">loaded traces</span>
-      </div>
-
-      <div className="stat-cell">
-        <span className="stat-label">Highest P95</span>
-        <span className={`stat-value ${slowest && slowest.p95Ms > 500 ? 'is-warn' : ''}`}>
-          {`${slowest ? slowest.p95Ms.toFixed(1) : '0.0'} ms`}
-        </span>
-        <span className="stat-note stat-note-wrap">{slowest ? slowest.serviceName : 'no spans yet'}</span>
-      </div>
+  const cell = (label: string, value: string | number, note: string, tone = '') => (
+    <div className="stat-cell">
+      <dt className="stat-label">{label}</dt>
+      <dd className={`stat-value ${tone}`}>{value}</dd>
+      <dd className="stat-note">{note}</dd>
     </div>
+  );
+
+  return (
+    <dl className="readout">
+      {cell('Traces loaded', traces.length, formatCount(services.length, 'service'))}
+      {cell('Traces with errors', `${errorRate.toFixed(1)}%`, `${failed} of ${traces.length}`, errorRate > 10 ? 'is-bad' : '')}
+      {cell('Mean trace duration', `${meanMs.toFixed(1)} ms`, 'loaded traces')}
+      {cell(
+        'Highest P95',
+        `${slowest ? slowest.p95Ms.toFixed(1) : '0.0'} ms`,
+        slowest ? slowest.serviceName : 'no spans yet',
+        slowest && slowest.p95Ms > 500 ? 'is-warn' : ''
+      )}
+    </dl>
   );
 };

@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { SpanNode, TraceDetail } from '../../../shared/types.js';
 import { formatCount } from '../utils/pluralize.js';
 
 interface WaterfallProps {
   trace: TraceDetail | null;
   loading: boolean;
+  selectedSpanId: string | null;
+  onSelectSpan: (id: string) => void;
 }
 
-function flatten(root: SpanNode): SpanNode[] {
+export function flatten(root: SpanNode): SpanNode[] {
   const out: SpanNode[] = [];
   const visit = (node: SpanNode) => {
     out.push(node);
@@ -19,9 +21,7 @@ function flatten(root: SpanNode): SpanNode[] {
 
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
-export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading }) => {
-  const [openSpanId, setOpenSpanId] = useState<string | null>(null);
-
+export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading, selectedSpanId, onSelectSpan }) => {
   if (!trace) {
     return (
       <div className="result-empty">
@@ -86,10 +86,15 @@ export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading }) => {
         </div>
 
         <ol className="span-list">
+          <li className="grid-overlay" aria-hidden="true">
+            {TICKS.map((t) => (
+              <span key={t} className="grid-line" style={{ left: `${t * 100}%` }} />
+            ))}
+          </li>
           {spans.map((span) => {
             const left = Math.min(99, Math.max(0, (span.offsetMs / total) * 100));
             const width = Math.min(100 - left, Math.max(0.8, (span.durationMs / total) * 100));
-            const open = openSpanId === span.id;
+            const open = (selectedSpanId ?? rootSpan.id) === span.id;
             const failed = span.statusCode === 'ERROR';
 
             return (
@@ -97,93 +102,117 @@ export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading }) => {
                 <button
                   type="button"
                   className="span-row"
-                  aria-expanded={open}
-                  onClick={() => setOpenSpanId(open ? null : span.id)}
+                  aria-pressed={open}
+                  onClick={() => onSelectSpan(span.id)}
                 >
                   <span className="span-label" style={{ paddingLeft: `${Math.min(span.depth, 5) * 14}px` }}>
                     <span className="span-name">{span.name}</span>
                     <span className="span-service">{span.serviceName}</span>
                     {span.isBottleneck && span.depth > 0 && <span className="span-flag">longest child</span>}
+                    {failed && <span className="span-flag is-bad">error</span>}
+                    <span className="sr-only">{`starts at +${span.offsetMs} ms`}</span>
                   </span>
                   <span className="span-track" aria-hidden="true">
                     <span
-                      className={`span-bar ${failed ? 'is-failed' : ''}`}
+                      className={`span-bar ${failed ? 'is-failed' : span.isBottleneck && span.depth > 0 ? 'is-longest' : ''}`}
                       style={{ left: `${left}%`, width: `${width}%` }}
                     />
                   </span>
                   <span className={`span-duration mono ${failed ? 'is-bad' : ''}`}>{`${span.durationMs} ms`}</span>
                 </button>
 
-                {open && (
-                  <div className="span-detail">
-                    <dl className="facts">
-                      <div className="fact fact-wide">
-                        <dt>Span ID</dt>
-                        <dd className="mono id-text">{span.id}</dd>
-                      </div>
-                      <div className="fact fact-wide">
-                        <dt>Parent span ID</dt>
-                        <dd className="mono id-text">{span.parentSpanId || 'none (root)'}</dd>
-                      </div>
-                      <div className="fact">
-                        <dt>Kind</dt>
-                        <dd className="mono">{span.kind}</dd>
-                      </div>
-                      <div className="fact fact-wide">
-                        <dt>Status</dt>
-                        <dd className={`mono ${failed ? 'is-bad' : ''}`}>
-                          {span.statusMessage ? `${span.statusCode}: ${span.statusMessage}` : span.statusCode}
-                        </dd>
-                      </div>
-                      <div className="fact">
-                        <dt>Starts at</dt>
-                        <dd className="mono">{`+${span.offsetMs} ms`}</dd>
-                      </div>
-                      <div className="fact">
-                        <dt>Share of trace</dt>
-                        <dd className="mono">{`${span.durationPercent.toFixed(1)}%`}</dd>
-                      </div>
-                    </dl>
-
-                    {Object.keys(span.attributes).length > 0 && (
-                      <table className="data-table attr-table">
-                        <caption className="attr-caption">Attributes</caption>
-                        <thead>
-                          <tr>
-                            <th scope="col">Key</th>
-                            <th scope="col">Value</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(span.attributes).map(([key, value]) => (
-                            <tr key={key}>
-                              <td className="mono wrap-text">{key}</td>
-                              <td className="mono wrap-text">{String(value)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-
-                    {span.events && span.events.length > 0 && (
-                      <div>
-                        <h3 className="attr-caption">Events</h3>
-                        <ul className="event-list">
-                          {span.events.map((event, i) => (
-                            <li key={i} className="mono">
-                              {`${event.name} at +${Math.max(0, Math.round((event.timestampMs - summary.startTimeMs) * 100) / 100)} ms`}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
               </li>
             );
           })}
         </ol>
       </figure>
     </section>
+  );
+};
+
+export const SpanInspector: React.FC<{ trace: TraceDetail | null; spanId: string | null }> = ({ trace, spanId }) => {
+  if (!trace) {
+    return (
+      <div className="inspector">
+        <h2 className="panel-heading">Span inspector</h2>
+        <p className="result-empty">Select a trace, then a span, to read its details.</p>
+      </div>
+    );
+  }
+  const { summary, rootSpan } = trace;
+  const span = flatten(rootSpan).find((s) => s.id === (spanId ?? rootSpan.id)) ?? rootSpan;
+  const failed = span.statusCode === 'ERROR';
+
+  return (
+    <div className="inspector">
+      <h2 className="panel-heading">Span inspector</h2>
+      <p className="inspector-name">{span.name}</p>
+      <p className="inspector-service mono">{span.serviceName}</p>
+      <dl className="facts">
+        <div className="fact fact-wide">
+          <dt>Span ID</dt>
+          <dd className="mono id-text">{span.id}</dd>
+        </div>
+        <div className="fact fact-wide">
+          <dt>Parent span ID</dt>
+          <dd className="mono id-text">{span.parentSpanId || 'none (root)'}</dd>
+        </div>
+        <div className="fact">
+          <dt>Kind</dt>
+          <dd className="mono">{span.kind}</dd>
+        </div>
+        <div className="fact">
+          <dt>Duration</dt>
+          <dd className="mono">{`${span.durationMs} ms`}</dd>
+        </div>
+        <div className="fact fact-wide">
+          <dt>Status</dt>
+          <dd className={`mono ${failed ? 'is-bad' : ''}`}>
+            {span.statusMessage ? `${span.statusCode}: ${span.statusMessage}` : span.statusCode}
+          </dd>
+        </div>
+        <div className="fact">
+          <dt>Starts at</dt>
+          <dd className="mono">{`+${span.offsetMs} ms`}</dd>
+        </div>
+        <div className="fact">
+          <dt>Share of trace</dt>
+          <dd className="mono">{`${span.durationPercent.toFixed(1)}%`}</dd>
+        </div>
+      </dl>
+
+      {Object.keys(span.attributes).length > 0 && (
+        <table className="data-table attr-table">
+          <caption className="attr-caption">Attributes</caption>
+          <thead>
+            <tr>
+              <th scope="col">Key</th>
+              <th scope="col">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(span.attributes).map(([key, value]) => (
+              <tr key={key}>
+                <td className="mono wrap-text">{key}</td>
+                <td className="mono wrap-text">{String(value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {span.events && span.events.length > 0 && (
+        <div>
+          <h3 className="attr-caption">Events</h3>
+          <ul className="event-list">
+            {span.events.map((event, i) => (
+              <li key={i} className="mono">
+                {`${event.name} at +${Math.max(0, Math.round((event.timestampMs - summary.startTimeMs) * 100) / 100)} ms`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 };

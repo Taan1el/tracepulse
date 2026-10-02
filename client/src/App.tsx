@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { TriangleAlert } from 'lucide-react';
+import { RefreshCw, TriangleAlert } from 'lucide-react';
 import type { TraceSummary, TraceDetail, ServiceMetric, ServiceTopology } from '../../shared/types.js';
 import { fetchTraces, fetchTraceById, fetchServices, fetchTopology } from './services/index.js';
 import { DemoBanner } from './components/DemoBanner.js';
@@ -7,7 +7,7 @@ import { Header } from './components/Header.js';
 import { StatsStrip } from './components/StatsStrip.js';
 import { TraceFilters } from './components/TraceFilters.js';
 import { TraceTable } from './components/TraceTable.js';
-import { Waterfall } from './components/Waterfall.js';
+import { Waterfall, SpanInspector } from './components/Waterfall.js';
 import { ServicesTable } from './components/ServicesTable.js';
 import { ServiceCalls } from './components/ServiceCalls.js';
 import { TrafficDialog } from './components/TrafficDialog.js';
@@ -15,16 +15,15 @@ import { TraceparentDialog } from './components/TraceparentDialog.js';
 import { formatCount } from './utils/pluralize.js';
 import './App.css';
 
-type View = 'traces' | 'services' | 'calls';
+type View = 'services' | 'calls';
 
 const VIEWS: Array<{ id: View; label: string }> = [
-  { id: 'traces', label: 'Traces' },
   { id: 'services', label: 'Services' },
   { id: 'calls', label: 'Service calls' },
 ];
 
 export const App: React.FC = () => {
-  const [view, setView] = useState<View>('traces');
+  const [view, setView] = useState<View>('services');
 
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -37,6 +36,8 @@ export const App: React.FC = () => {
   const [minDuration, setMinDuration] = useState('');
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
 
   const [loadingTraces, setLoadingTraces] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -85,6 +86,10 @@ export const App: React.FC = () => {
   }, [loadMetricsAndTopology]);
 
   useEffect(() => {
+    setSelectedSpanId(null);
+  }, [selectedTraceId]);
+
+  useEffect(() => {
     if (!selectedTraceId) {
       setSelectedTraceDetail(null);
       return;
@@ -124,11 +129,12 @@ export const App: React.FC = () => {
   );
 
   return (
-    <div className="app-container">
+    <div className="app">
       <DemoBanner onReset={handleRefresh} />
       <Header onOpenTraffic={() => setDialog('traffic')} onOpenTraceparent={() => setDialog('traceparent')} />
+      <StatsStrip traces={traces} services={services} />
 
-      <main className="app-main">
+      <main className="workbench">
         {error && (
           <div className="alert" role="alert">
             <span className="alert-message">
@@ -140,76 +146,85 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        <StatsStrip traces={traces} services={services} />
-
-        <div>
-          <nav className="view-nav" aria-label="Views">
-            {VIEWS.map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                className="view-btn"
-                aria-current={view === v.id ? 'page' : undefined}
-                onClick={() => setView(v.id)}
-              >
-                {v.id === 'traces' ? `${v.label} (${traces.length})` : v.label}
+        <aside className="col-list" aria-label="Trace list and filters">
+          <TraceFilters
+            services={services.map((s) => s.serviceName)}
+            selectedService={selectedService}
+            onSelectService={setSelectedService}
+            minDuration={minDuration}
+            onMinDurationChange={setMinDuration}
+            errorsOnly={errorsOnly}
+            onToggleErrorsOnly={setErrorsOnly}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+          <div className="list-head">
+            <div className="list-title">
+              <h2 className="panel-heading">Traces</h2>
+              <button type="button" className="btn btn-secondary btn-compact" onClick={handleRefresh}>
+                <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
+                Refresh
               </button>
-            ))}
-          </nav>
+            </div>
+            <p className="list-note">
+              {query
+                ? `${formatCount(visibleTraces.length, 'match', 'matches')} among ${formatCount(traces.length, 'loaded trace')}.`
+                : `${traces.length} loaded, newest first.`}
+            </p>
+          </div>
+          <TraceTable
+            traces={visibleTraces}
+            selectedTraceId={selectedTraceId}
+            onSelectTrace={setSelectedTraceId}
+            loading={loadingTraces}
+          />
+        </aside>
 
-          {view === 'traces' && (
-            <div className="view-body">
-              <TraceFilters
-                services={services.map((s) => s.serviceName)}
-                selectedService={selectedService}
-                onSelectService={setSelectedService}
-                minDuration={minDuration}
-                onMinDurationChange={setMinDuration}
-                errorsOnly={errorsOnly}
-                onToggleErrorsOnly={setErrorsOnly}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                onRefresh={handleRefresh}
-              />
+        <div className="col-main">
+          <Waterfall
+            key={selectedTraceDetail?.summary.id ?? 'none'}
+            trace={selectedTraceDetail}
+            loading={loadingDetail}
+            selectedSpanId={selectedSpanId}
+            onSelectSpan={setSelectedSpanId}
+          />
 
-              <div className="split-layout">
-                <div className="split-left">
-                  <h2 className="section-heading">Traces</h2>
-                  <p className="section-description">
-                    {query
-                      ? `${formatCount(visibleTraces.length, 'match', 'matches')} among ${formatCount(traces.length, 'loaded trace')}.`
-                      : 'Newest first. Pick one to see where its time went.'}
-                  </p>
-                  <TraceTable
-                    traces={visibleTraces}
-                    selectedTraceId={selectedTraceId}
-                    onSelectTrace={setSelectedTraceId}
-                    loading={loadingTraces}
-                  />
-                </div>
-                <div className="split-right">
-                  <Waterfall key={selectedTraceDetail?.summary.id ?? 'none'} trace={selectedTraceDetail} loading={loadingDetail} />
-                </div>
+          <section className="tabs-panel">
+            <nav className="tab-bar" aria-label="Service views">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  className="tab-btn"
+                  aria-current={view === v.id ? 'page' : undefined}
+                  onClick={() => setView(v.id)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </nav>
+
+            {view === 'services' && (
+              <div className="tab-body">
+                <h2 className="panel-heading">Service latency</h2>
+                <p className="section-description">Percentiles and error rate for the spans each service recorded.</p>
+                <ServicesTable metrics={services} />
               </div>
-            </div>
-          )}
+            )}
 
-          {view === 'services' && (
-            <div className="view-body">
-              <h2 className="section-heading">Service latency</h2>
-              <p className="section-description">Percentiles and error rate for the spans each service recorded.</p>
-              <ServicesTable metrics={services} />
-            </div>
-          )}
-
-          {view === 'calls' && (
-            <div className="view-body">
-              <h2 className="section-heading">Service calls</h2>
-              <p className="section-description">Which service calls which, found from parent and child spans in different services.</p>
-              <ServiceCalls topology={topology} />
-            </div>
-          )}
+            {view === 'calls' && (
+              <div className="tab-body">
+                <h2 className="panel-heading">Service calls</h2>
+                <p className="section-description">Which service calls which, found from parent and child spans in different services.</p>
+                <ServiceCalls topology={topology} />
+              </div>
+            )}
+          </section>
         </div>
+
+        <aside className="col-inspector" aria-label="Span inspector">
+          <SpanInspector trace={selectedTraceDetail} spanId={selectedSpanId} />
+        </aside>
       </main>
 
       <footer className="app-footer">

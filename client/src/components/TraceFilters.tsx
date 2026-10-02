@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 interface TraceFiltersProps {
   services: string[];
@@ -11,7 +11,6 @@ interface TraceFiltersProps {
   onToggleErrorsOnly: (val: boolean) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  onRefresh: () => void;
 }
 
 export const TraceFilters: React.FC<TraceFiltersProps> = ({
@@ -24,9 +23,9 @@ export const TraceFilters: React.FC<TraceFiltersProps> = ({
   onToggleErrorsOnly,
   searchQuery,
   onSearchChange,
-  onRefresh,
 }) => (
-  <div className="filter-bar">
+  <div className="filter-panel" role="search" aria-label="Trace filters">
+    <div className="field-pair">
     <div className="field">
       <label className="field-label" htmlFor="filter-service">Service</label>
       <select id="filter-service" value={selectedService} onChange={(e) => onSelectService(e.target.value)}>
@@ -47,6 +46,7 @@ export const TraceFilters: React.FC<TraceFiltersProps> = ({
         <option value="150">150 ms or longer</option>
         <option value="500">500 ms or longer</option>
       </select>
+    </div>
     </div>
 
     <div className="field field-grow">
@@ -72,10 +72,5 @@ export const TraceFilters: React.FC<TraceFiltersProps> = ({
       />
       <label htmlFor="filter-errors">Only traces with an error span</label>
     </div>
-
-    <button type="button" className="btn btn-secondary" onClick={onRefresh}>
-      <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
-      Refresh
-    </button>
   </div>
 );

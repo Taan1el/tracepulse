@@ -27,8 +27,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId,
         <thead>
           <tr>
             <th scope="col">Operation</th>
-            <th scope="col">Duration</th>
-            <th scope="col">Status</th>
+            <th scope="col">Duration and status</th>
           </tr>
         </thead>
         <tbody>
@@ -47,10 +46,10 @@ export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId,
                     <span className="op-meta">{`${trace.id.slice(0, 8)} · ${formatCount(trace.spanCount, 'span')}`}</span>
                   </button>
                 </td>
-                <td className={`num-cell ${trace.durationMs > SLOW_TRACE_MS ? 'is-warn' : ''}`}>
-                  {`${trace.durationMs} ms`}
-                </td>
-                <td>
+                <td className="time-cell">
+                  <span className={`mono ${trace.durationMs > SLOW_TRACE_MS ? 'is-warn' : ''}`}>
+                    {`${trace.durationMs} ms`}
+                  </span>
                   <span className="status">
                     <span className={`status-dot ${trace.hasError ? 'bad' : 'ok'}`} aria-hidden="true" />
                     {trace.hasError ? 'Error' : 'OK'}

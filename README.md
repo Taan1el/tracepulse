@@ -12,9 +12,11 @@ The demo runs entirely in your browser: the same trace-building, percentile and 
 
 ## Screenshot
 
-![Trace table next to the waterfall of the selected trace, with one span expanded](docs/screenshots/01-dashboard.png)
+The screen is a dark, three-column recorder view: a narrow trace list with filters on the left, the waterfall of the selected trace in the center with a time axis and a duration printed beside every bar, and an inspector for the selected span on the right. Service latency and service calls are tabs under the waterfall. On a phone the columns stack, waterfall first.
 
-More screenshots: [latency per service](docs/screenshots/02-services.png), [calls between services](docs/screenshots/03-calls.png), [the app at phone width](docs/screenshots/04-mobile.png).
+![Trace list, waterfall and span inspector on a dark ground](docs/screenshots/01-dashboard.png)
+
+More screenshots: [latency per service tab](docs/screenshots/02-services.png), [service calls tab](docs/screenshots/03-calls.png), [the app at phone width](docs/screenshots/04-mobile.png).
 
 ## Features
 
@@ -194,7 +196,7 @@ Unexpected generation or storage failures return HTTP 500.
 ## Testing
 
 - **Server** (`server/test`, Vitest and `supertest`, in-memory SQLite): every route including the 404 and empty states, input validation for spans, queries, simulation options and JSON bodies, cyclic and deep span graphs, exact service filtering, W3C parsing, percentile and tree logic, shared analytics and flow builders, and that error responses do not leak internal detail.
-- **Client** (`client/src/test`, React Testing Library with a mocked `fetch`): the stats strip, trace table, selecting a trace, span details, filters sent to the API, search, the services and calls views, error and retry, both dialogs including keyboard behavior, and the demo bar.
+- **Client** (`client/src/test`, React Testing Library with a mocked `fetch`): the counters row, trace list, selecting a trace, the span inspector, filters sent to the API, search, the services and calls views, error and retry, both dialogs including keyboard behavior, and the demo bar.
 - **Demo data layer** (`client/src/test/demoApi.test.ts`): deterministic sample data, filters, trace lookup, metrics and edges, simulation, reset, and `traceparent` handling.
 
 Tests use no real timers or network. Run them with `npm test`.

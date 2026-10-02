@@ -1,20 +1,24 @@
 :root {
-  --paper: #faf9f6;        /* page background */
-  --surface: #ffffff;      /* panels, tables */
-  --ink: #17160f;          /* primary text */
-  --ink-2: #57544b;        /* secondary text */
-  --ink-3: #8a867b;        /* tertiary text, placeholders */
-  --rule: #e3e0d7;         /* borders and dividers */
-  --rule-strong: #cfcabd;  /* input borders, table header rule */
-  --accent: #c2410c;       /* tracepulse: trace orange, spans */
-  --accent-ink: #ffffff;   /* text on accent fills */
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  /* status colors are data, not decoration: use only for status text, dots, small badges and meter fills */
-  --ok: #1f7a4d;
-  --warn: #a15c00;
-  --bad: #b3261e;
-  --radius: 6px;
-  --font-heading: "Sora Variable", "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Geist Variable", "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+  color-scheme: dark;
+  --paper: #0e1012;        /* page background */
+  --surface: #15181b;      /* panels, tables */
+  --raised: #15181b;       /* floating layers share the surface; the edge separates them */
+  --ink: #e8e6e1;          /* primary text, 14.3:1 on surface */
+  --ink-2: #b3b1aa;        /* secondary text, 8.3:1 */
+  --ink-3: #8c8a84;        /* tertiary text, 5.2:1 */
+  --rule: #262a2e;         /* dividers */
+  --rule-strong: #6b7077;  /* input borders and neutral bars, 3.6:1 */
+  --bar: #7d848c;          /* ordinary span bars */
+  --accent: #ff8a4c;       /* tracepulse: trace orange, 7.6:1 on surface */
+  --accent-ink: #1d0f06;   /* text on accent fills, 8.0:1 */
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  /* status colors encode status only, each at least 7:1 on the surface */
+  --ok: #4cc38a;
+  --warn: #e8b04a;
+  --bad: #ff7a70;
+  --radius: 2px;
+  --page-pad: clamp(16px, 3vw, 32px);
+  --font-heading: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Roboto Mono Variable", "Roboto Mono", ui-monospace, "SFMono-Regular", monospace;
 }

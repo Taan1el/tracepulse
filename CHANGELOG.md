@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- New visual identity: a dark flight-recorder look with an orange accent, Hanken Grotesk for text and Roboto Mono for numbers and IDs.
+- The page now puts the waterfall first. A narrow trace list with filters sits on the left, the waterfall with its time axis is in the center, and a span inspector on the right shows the selected span. Service latency and service calls are tabs under the waterfall.
+- Clicking a span selects it and shows its details in the inspector instead of expanding the row.
+- The counters moved into a single readout line under the header, and the Refresh button moved to the trace list.
+
 ## [1.0.0] - 2026-10-02
 
 ### Added
