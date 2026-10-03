@@ -197,6 +197,7 @@ Unexpected generation or storage failures return HTTP 500.
 
 - **Server** (`server/test`, Vitest and `supertest`, in-memory SQLite): every route including the 404 and empty states, input validation for spans, queries, simulation options and JSON bodies, cyclic and deep span graphs, exact service filtering, W3C parsing, percentile and tree logic, shared analytics and flow builders, and that error responses do not leak internal detail.
 - **Client** (`client/src/test`, React Testing Library with a mocked `fetch`): the counters row, trace list, selecting a trace, the span inspector, filters sent to the API, search, the services and calls views, error and retry, both dialogs including keyboard behavior, and the demo bar.
+- **Accessibility** (`client/src/test/a11y.test.tsx`, `vitest-axe`): the suite includes automated accessibility checks (WCAG 2 A and AA rules) on the trace list with waterfall, the Services and Service calls tabs and both dialogs, plus a keyboard walkthrough. Color contrast cannot be computed in jsdom, so it is checked outside the test suite.
 - **Demo data layer** (`client/src/test/demoApi.test.ts`): deterministic sample data, filters, trace lookup, metrics and edges, simulation, reset, and `traceparent` handling.
 
 Tests use no real timers or network. Run them with `npm test`.

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Automated accessibility checks for the trace list and waterfall, the Services and Service calls tabs and both dialogs, plus a keyboard test covering the filters, trace rows, spans and the traceparent dialog. The checks found no violations, so no interface changes were needed.
+
 ### Changed
 - New visual identity: a dark flight-recorder look with an orange accent, Hanken Grotesk for text and Roboto Mono for numbers and IDs.
 - The page now puts the waterfall first. A narrow trace list with filters sits on the left, the waterfall with its time axis is in the center, and a span inspector on the right shows the selected span. Service latency and service calls are tabs under the waterfall.
