@@ -24,7 +24,7 @@ export const ServiceCalls: React.FC<ServiceCallsProps> = ({ topology }) => {
       <p className="diagram-caption">
         {`${formatCount(nodes.length, 'service')} and ${formatCount(edges.length, 'call path')}. Busiest path: ${busiest.source} to ${busiest.target}, ${formatCount(busiest.callCount, 'call')}.`}
       </p>
-      <div className="table-wrapper">
+      <div className="table-wrapper" role="region" aria-label="Service calls table" tabIndex={0}>
         <table className="data-table">
           <caption className="sr-only">Calls from one service to another, most calls first</caption>
           <thead>

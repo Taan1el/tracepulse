@@ -21,7 +21,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({ metrics }) => {
 
   return (
     <div>
-      <div className="table-wrapper">
+      <div className="table-wrapper" role="region" aria-label="Service latency table" tabIndex={0}>
         <table className="data-table">
           <caption className="sr-only">Latency and errors per service</caption>
           <thead>

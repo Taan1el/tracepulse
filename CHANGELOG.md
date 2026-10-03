@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Automated accessibility checks for the trace list and waterfall, the Services and Service calls tabs and both dialogs, plus a keyboard test covering the filters, trace rows, spans and the traceparent dialog. The checks found no violations, so no interface changes were needed.
+- A test that checks every sideways-scrolling table area is a named, keyboard-focusable region.
+
+### Fixed
+- The Services and Service calls tables can now be scrolled sideways with the keyboard, with a visible focus outline.
 
 ### Changed
 - New visual identity: a dark flight-recorder look with an orange accent, Hanken Grotesk for text and Roboto Mono for numbers and IDs.

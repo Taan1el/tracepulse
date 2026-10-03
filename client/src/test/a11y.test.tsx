@@ -182,6 +182,31 @@ describe('Accessibility', () => {
   });
 });
 
+describe('Scrollable regions', () => {
+  const SCROLLERS = '.table-wrapper, .table-scroll, [class*="scroll"], [class*="overflow"]';
+
+  function expectNamedRegions(root: ParentNode) {
+    const found = Array.from(root.querySelectorAll(SCROLLERS));
+    expect(found.length).toBeGreaterThan(0);
+    for (const el of found) {
+      expect(el).toHaveAttribute('role', 'region');
+      expect(el).toHaveAttribute('tabindex', '0');
+      expect(el.getAttribute('aria-label')?.trim()).toBeTruthy();
+    }
+  }
+
+  it('names and focuses every sideways scroller on each main view', async () => {
+    const { container, user } = await renderLoadedIn();
+    expectNamedRegions(container);
+    await user.click(screen.getByRole('button', { name: 'Services' }));
+    await screen.findByRole('table', { name: 'Latency and errors per service' });
+    expectNamedRegions(container);
+    await user.click(screen.getByRole('button', { name: 'Service calls' }));
+    await screen.findByRole('table', { name: /Calls from one service to another/ });
+    expectNamedRegions(container);
+  });
+});
+
 describe('Keyboard use', () => {
   it('reaches the filters with Tab', async () => {
     const { user } = await renderLoadedIn();
