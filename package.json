@@ -1,6 +1,6 @@
 {
   "name": "tracepulse",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Distributed Tracing, OpenTelemetry Spans & Microservice Performance Observability Engine",
   "private": true,
   "type": "module",
