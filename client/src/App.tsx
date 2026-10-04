@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import type { TraceSummary, TraceDetail, ServiceMetric, ServiceTopology } from '../../shared/types.js';
-import { fetchTraces, fetchTraceById, fetchServices, fetchTopology } from './services/index.js';
+import { fetchTraces, fetchTraceById, fetchServices, fetchTopology, isDemoMode } from './services/index.js';
+import { WorkspaceBar } from './local/WorkspaceBar.js';
+import { TraceAnalysis } from './local/TimingPanel.js';
+import { subscribeWorkspace, workspaceMode } from './local/traceWorkspace.js';
 import { DemoBanner } from './components/DemoBanner.js';
 import { Header } from './components/Header.js';
 import { StatsStrip } from './components/StatsStrip.js';
@@ -24,6 +27,12 @@ const VIEWS: Array<{ id: View; label: string }> = [
 
 export const App: React.FC = () => {
   const [view, setView] = useState<View>('services');
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+  useEffect(() => isDemoMode ? subscribeWorkspace(() => {
+    setSelectedTraceId(null);
+    setSelectedTraceDetail(null);
+    setWorkspaceRevision((value) => value + 1);
+  }) : undefined, []);
 
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -64,7 +73,7 @@ export const App: React.FC = () => {
     } finally {
       setLoadingTraces(false);
     }
-  }, [selectedService, minDuration, errorsOnly]);
+  }, [selectedService, minDuration, errorsOnly, workspaceRevision]);
 
   const loadMetricsAndTopology = useCallback(async () => {
     try {
@@ -75,7 +84,7 @@ export const App: React.FC = () => {
       console.error('Failed to load service metrics:', err);
       setError(err instanceof Error ? err.message : 'Failed to load service metrics');
     }
-  }, []);
+  }, [workspaceRevision]);
 
   useEffect(() => {
     loadTraces();
@@ -87,7 +96,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     setSelectedSpanId(null);
-  }, [selectedTraceId]);
+  }, [selectedTraceId, workspaceRevision]);
 
   useEffect(() => {
     if (!selectedTraceId) {
@@ -112,7 +121,7 @@ export const App: React.FC = () => {
     return () => {
       current = false;
     };
-  }, [selectedTraceId]);
+  }, [selectedTraceId, workspaceRevision]);
 
   const handleRefresh = () => {
     loadTraces();
@@ -130,8 +139,10 @@ export const App: React.FC = () => {
 
   return (
     <div className="app">
-      <DemoBanner onReset={handleRefresh} />
-      <Header onOpenTraffic={() => setDialog('traffic')} onOpenTraceparent={() => setDialog('traceparent')} />
+      <DemoBanner onReset={handleRefresh} mode={isDemoMode ? workspaceMode() : 'sample'} />
+      <Header onOpenTraffic={() => setDialog('traffic')} onOpenTraceparent={() => setDialog('traceparent')}
+        workspace={isDemoMode && workspaceMode() === 'workspace'} />
+      {isDemoMode && <WorkspaceBar />}
       <StatsStrip traces={traces} services={services} />
 
       <main className="workbench">
@@ -158,6 +169,7 @@ export const App: React.FC = () => {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
           />
+
           <div className="list-head">
             <div className="list-title">
               <h2 className="panel-heading">Traces</h2>
@@ -188,6 +200,8 @@ export const App: React.FC = () => {
             selectedSpanId={selectedSpanId}
             onSelectSpan={setSelectedSpanId}
           />
+
+          <TraceAnalysis trace={selectedTraceDetail} />
 
           <section className="tabs-panel">
             <nav className="tab-bar" aria-label="Service views">
@@ -228,7 +242,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="app-footer">
-        <span>TracePulse 1.0.0, MIT license</span>
+        <span>TracePulse 1.1.0, MIT license</span>
         <a href="https://github.com/Taan1el/tracepulse" target="_blank" rel="noreferrer">
           Source on GitHub
         </a>

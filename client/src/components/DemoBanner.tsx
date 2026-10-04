@@ -3,9 +3,10 @@ import { isDemoMode, resetDemoData } from '../services/index.js';
 
 interface DemoBannerProps {
   onReset: () => void;
+  mode?: 'sample' | 'workspace';
 }
 
-export const DemoBanner: React.FC<DemoBannerProps> = ({ onReset }) => {
+export const DemoBanner: React.FC<DemoBannerProps> = ({ onReset, mode = 'sample' }) => {
   if (!isDemoMode) return null;
 
   const handleReset = () => {
@@ -18,7 +19,7 @@ export const DemoBanner: React.FC<DemoBannerProps> = ({ onReset }) => {
   return (
     <div className="demo-bar">
       <div className="demo-bar-inner">
-        <span>Demo: everything runs in your browser with sample data.</span>
+        <span>{mode === 'sample' ? 'Demo: everything runs in your browser with sample data.' : 'Your workspace: recorded traces saved in this browser.'}</span>
         <span className="demo-bar-links">
           <button type="button" className="link-btn" onClick={handleReset}>
             Reset sample data

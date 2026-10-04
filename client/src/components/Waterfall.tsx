@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { SpanNode, TraceDetail } from '../../../shared/types.js';
 import { formatCount } from '../utils/pluralize.js';
+import { buildTraceForest } from '../local/traceFiles.js';
 
 interface WaterfallProps {
   trace: TraceDetail | null;
@@ -21,7 +22,16 @@ export function flatten(root: SpanNode): SpanNode[] {
 
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
+function traceSpans(trace: TraceDetail): SpanNode[] {
+  return trace.rawSpans.length ? buildTraceForest(trace).flatMap(flatten) : flatten(trace.rootSpan);
+}
+
 export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading, selectedSpanId, onSelectSpan }) => {
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [trace]);
+  const spans = useMemo(() => trace ? traceSpans(trace) : [], [trace]);
+  const lastPage = Math.max(0, Math.ceil(spans.length / 100) - 1);
+  const currentPage = Math.min(page, lastPage);
   if (!trace) {
     return (
       <div className="result-empty">
@@ -32,7 +42,6 @@ export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading, selectedSp
 
   const { summary, rootSpan } = trace;
   const total = summary.durationMs;
-  const spans = flatten(rootSpan);
   const slowestChild = spans.find((s) => s.isBottleneck && s.depth > 0);
 
   return (
@@ -91,9 +100,9 @@ export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading, selectedSp
               <span key={t} className="grid-line" style={{ left: `${t * 100}%` }} />
             ))}
           </li>
-          {spans.map((span) => {
-            const left = Math.min(99, Math.max(0, (span.offsetMs / total) * 100));
-            const width = Math.min(100 - left, Math.max(0.8, (span.durationMs / total) * 100));
+          {spans.slice(currentPage * 100, (currentPage + 1) * 100).map((span) => {
+            const left = total > 0 ? Math.min(99, Math.max(0, (span.offsetMs / total) * 100)) : 0;
+            const width = total > 0 ? Math.min(100 - left, Math.max(0.8, (span.durationMs / total) * 100)) : 0.8;
             const open = (selectedSpanId ?? rootSpan.id) === span.id;
             const failed = span.statusCode === 'ERROR';
 
@@ -125,12 +134,18 @@ export const Waterfall: React.FC<WaterfallProps> = ({ trace, loading, selectedSp
             );
           })}
         </ol>
+        {lastPage > 0 && <nav className="pagination" aria-label="Waterfall pages">
+          <button className="btn btn-secondary" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous spans</button>
+          <span className="mono">{currentPage + 1} / {lastPage + 1}</span>
+          <button className="btn btn-secondary" type="button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next spans</button>
+        </nav>}
       </figure>
     </section>
   );
 };
 
 export const SpanInspector: React.FC<{ trace: TraceDetail | null; spanId: string | null }> = ({ trace, spanId }) => {
+  const spans = useMemo(() => trace ? traceSpans(trace) : [], [trace]);
   if (!trace) {
     return (
       <div className="inspector">
@@ -140,7 +155,7 @@ export const SpanInspector: React.FC<{ trace: TraceDetail | null; spanId: string
     );
   }
   const { summary, rootSpan } = trace;
-  const span = flatten(rootSpan).find((s) => s.id === (spanId ?? rootSpan.id)) ?? rootSpan;
+  const span = spans.find((s) => s.id === (spanId ?? rootSpan.id)) ?? rootSpan;
   const failed = span.statusCode === 'ERROR';
 
   return (

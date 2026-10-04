@@ -4,9 +4,10 @@ import { Play, ScanLine } from 'lucide-react';
 interface HeaderProps {
   onOpenTraffic: () => void;
   onOpenTraceparent: () => void;
+  workspace?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenTraffic, onOpenTraceparent }) => (
+export const Header: React.FC<HeaderProps> = ({ onOpenTraffic, onOpenTraceparent, workspace = false }) => (
   <header className="app-header">
     <div className="header-inner">
       <div className="brand">
@@ -19,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenTraffic, onOpenTraceparent
           <ScanLine size={16} strokeWidth={1.75} aria-hidden="true" />
           Inspect traceparent
         </button>
-        <button type="button" className="btn btn-primary" onClick={onOpenTraffic}>
+        <button type="button" className="btn btn-primary" onClick={onOpenTraffic} disabled={workspace} title={workspace ? 'Generate sample traces in Sample data mode' : undefined}>
           <Play size={16} strokeWidth={1.75} aria-hidden="true" />
           Generate traffic
         </button>

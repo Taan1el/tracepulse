@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { TraceSummary } from '../../../shared/types.js';
 import { formatCount } from '../utils/pluralize.js';
 
@@ -12,6 +12,10 @@ interface TraceTableProps {
 export const SLOW_TRACE_MS = 500;
 
 export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId, onSelectTrace, loading }) => {
+  const [page, setPage] = useState(0);
+  useEffect(() => setPage(0), [traces]);
+  const lastPage = Math.max(0, Math.ceil(traces.length / 100) - 1);
+  const currentPage = Math.min(page, lastPage);
   if (traces.length === 0) {
     return (
       <div className="result-empty">
@@ -21,6 +25,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId,
   }
 
   return (
+    <>
     <div className="table-wrapper table-scroll" role="region" aria-label="Trace list" tabIndex={0}>
       <table className="data-table trace-table">
         <caption className="sr-only">{`Traces, newest first (${formatCount(traces.length, 'trace')})`}</caption>
@@ -31,7 +36,7 @@ export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId,
           </tr>
         </thead>
         <tbody>
-          {traces.map((trace) => {
+          {traces.slice(currentPage * 100, (currentPage + 1) * 100).map((trace) => {
             const selected = trace.id === selectedTraceId;
             return (
               <tr key={trace.id} className={selected ? 'is-selected' : undefined}>
@@ -61,5 +66,11 @@ export const TraceTable: React.FC<TraceTableProps> = ({ traces, selectedTraceId,
         </tbody>
       </table>
     </div>
+    {lastPage > 0 && <nav className="pagination" aria-label="Trace list pages">
+      <button className="btn btn-secondary" type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous traces</button>
+      <span className="mono">{currentPage + 1} / {lastPage + 1}</span>
+      <button className="btn btn-secondary" type="button" disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)}>Next traces</button>
+    </nav>}
+    </>
   );
 };
