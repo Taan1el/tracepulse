@@ -8,7 +8,19 @@ TracePulse is a trace viewer. It ingests spans over a REST API, stores them in S
 
 **Live demo:** https://taan1el.github.io/tracepulse/
 
-The demo runs entirely in your browser: the same trace-building, percentile and dependency code the server uses runs against 15 generated sample traces (the same 15 every visit), so it works with no backend.
+The static app runs entirely in your browser. Choose Sample data for 15 generated traces, or Your workspace to read recorded traces from your own files. No account, API key or backend is needed.
+
+## Use it with your own data
+
+Import a Jaeger JSON export (`data[].spans`) or OpenTelemetry JSON (`resourceSpans[].scopeSpans[].spans`). One file can contain several traces. Missing parents remain visible as separate roots. An invalid file reports its name and the failing field before changing the workspace. Larger files parse in a worker.
+
+The waterfall, service latency percentiles and service calls use the imported spans. Slowest spans and a critical path estimate help inspect timing. The estimate follows the heaviest parent chain using exclusive time; it cannot establish causality between concurrent spans.
+
+Your workspace and selected mode stay in IndexedDB on this machine. Export traces as Jaeger JSON to keep a backup or move work to another browser. Export and import retain span attributes, events and status. Reset sample data affects only the sample mode. Clearing browser storage removes the workspace, so keep a backup outside the browser.
+
+Install the app through your browser, or use the install control when offered. After one complete online load, the app and self-hosted fonts work offline. The Pages build has a Content-Security-Policy that allows requests only to its own host; traces never upload and the app makes no requests to other hosts. The source link opens a separate site only when selected.
+
+This browser tool reads recorded trace files; it does not collect live telemetry or run a tracing server.
 
 ## Screenshot
 
@@ -219,9 +231,9 @@ Serves the built client and the API at **http://localhost:4000**. The SQLite fil
 - Storage is one SQLite file written by one process. Nothing is ever deleted, so the file only grows. Ingestion and query speed have not been measured.
 - Service metrics are computed by reading every stored span on each request, which is fine for small data sets and will slow down as the data grows. Percentiles are over all stored spans, not a time window, and no throughput figure is reported.
 - Ingesting a trace ID that already exists replaces that trace. Span IDs are expected to be unique across traces.
-- The longest-child marker compares durations of non-root spans. It is not a critical-path analysis.
+- The longest-child marker compares durations of non-root spans. The separate critical path estimate uses exclusive time and a parent chain; concurrent spans do not reveal a causal critical path.
 - Only the `traceparent` header is handled, not `tracestate`. Spans are not read from an OpenTelemetry exporter directly; they are posted in the JSON shape described above.
-- The Pages demo keeps its data in memory for the page's lifetime. A reload restores the same sample data.
+- The sample mode keeps generated data in memory and reloads its original samples. Your workspace is saved separately in IndexedDB. Local browser storage can be cleared or evicted; exported files are the backup.
 
 Decision records: [SQLite storage](docs/adr/001-native-sqlite-wal-and-relational-span-storage.md), [W3C context and span trees](docs/adr/002-w3c-tracecontext-propagation-and-dag-span-tree-reconstruction.md), [percentiles and service calls](docs/adr/003-latency-percentiles-and-service-topology-derivation.md).
 
