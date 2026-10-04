@@ -1,0 +1,22 @@
+{
+  "data": [
+    {
+      "traceID": "1111111111111111",
+      "processes": {
+        "p1": { "serviceName": "web", "tags": [{ "key": "region", "type": "string", "value": "local" }] },
+        "p2": { "serviceName": "db", "tags": [] }
+      },
+      "spans": [
+        { "spanID": "0000000000000001", "operationName": "checkout", "processID": "p1", "startTime": 1791054000000000, "duration": 100000, "references": [], "tags": [{ "key": "span.kind", "type": "string", "value": "server" }] },
+        { "spanID": "0000000000000002", "operationName": "query", "processID": "p2", "startTime": 1791054000010000, "duration": 60000, "references": [{ "refType": "CHILD_OF", "traceID": "1111111111111111", "spanID": "0000000000000001" }], "tags": [{ "key": "http.status_code", "type": "int64", "value": 200 }], "logs": [{ "timestamp": 1791054000020000, "fields": [{ "key": "event", "type": "string", "value": "cache miss" }, { "key": "attempt", "type": "int64", "value": 1 }] }] },
+        { "spanID": "0000000000000003", "operationName": "overlap", "processID": "p1", "startTime": 1791054000020000, "duration": 30000, "references": [{ "refType": "CHILD_OF", "traceID": "1111111111111111", "spanID": "0000000000000001" }] },
+        { "spanID": "0000000000000004", "operationName": "orphan", "processID": "p2", "startTime": 1791054000030000, "duration": 20000, "references": [{ "refType": "CHILD_OF", "traceID": "1111111111111111", "spanID": "0000000000000099" }] }
+      ]
+    },
+    {
+      "traceID": "22222222222222222222222222222222",
+      "processes": { "p1": { "serviceName": "worker", "tags": [] } },
+      "spans": [{ "spanID": "0000000000000001", "operationName": "batch", "processID": "p1", "startTime": 1791054001000000, "duration": 4500, "tags": [{ "key": "error", "type": "bool", "value": true }, { "key": "otel.status_description", "type": "string", "value": "fixture failure" }] }]
+    }
+  ]
+}

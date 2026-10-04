@@ -1,0 +1,16 @@
+{
+  "resourceSpans": [
+    {
+      "resource": { "attributes": [{ "key": "service.name", "value": { "stringValue": "gateway" } }] },
+      "scopeSpans": [
+        { "scope": { "name": "synthetic-fixture" }, "spans": [
+          { "traceId": "33333333333333333333333333333333", "spanId": "0000000000000001", "parentSpanId": "", "name": "precise request", "kind": 2, "startTimeUnixNano": "1791054000123000001", "endTimeUnixNano": "1791054000135345679", "status": { "code": 1 }, "attributes": [{ "key": "size", "value": { "intValue": "9223372036854775807" } }, { "key": "labels", "value": { "arrayValue": { "values": [{ "stringValue": "a" }, { "boolValue": true }] } } }], "events": [{ "name": "received", "timeUnixNano": "1791054000123000011", "attributes": [{ "key": "count", "value": { "intValue": "2" } }] }] },
+          { "traceId": "33333333333333333333333333333333", "spanId": "0000000000000002", "parentSpanId": "0000000000000001", "name": "tiny child", "kind": "SPAN_KIND_CLIENT", "startTimeUnixNano": "1791054000123000011", "endTimeUnixNano": "1791054000123000016", "status": { "code": 2, "message": "precise failure" } }
+        ] }
+      ]
+    },
+    {
+      "scopeSpans": [{ "spans": [{ "traceId": "44444444444444444444444444444444", "spanId": "0000000000000001", "parentSpanId": "0000000000000000", "name": "resource fallback", "startTimeUnixNano": "1791054001123000000", "endTimeUnixNano": "1791054001123000000" }] }]
+    }
+  ]
+}
