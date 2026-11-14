@@ -322,3 +322,4 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.import-notes { margin: 4px 0 0 20px; font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }

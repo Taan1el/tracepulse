@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkspaceBar } from '../local/WorkspaceBar.js';
+import { SavedWorkspaceError } from '../local/workspace.js';
 import type { TraceDetail } from '../../../shared/types.js';
 import { buildTraceFromInput } from '../../../shared/trace-builder.js';
 import { axe } from './axe.js';
@@ -17,7 +18,7 @@ vi.mock('../local/traceWorkspace.js', () => ({
   replaceWorkspace: mocks.replace, removeWorkspace: mocks.remove,
   subscribeWorkspace: (listener: () => void) => { mocks.listeners.add(listener); return () => { mocks.listeners.delete(listener); }; },
 }));
-vi.mock('../local/traceFiles.js', () => ({ parseTraceFileAsync: mocks.parse, exportTraceFile: mocks.export }));
+vi.mock('../local/traceFiles.js', async (importOriginal) => ({ ...await importOriginal<typeof import('../local/traceFiles.js')>(), importTraceFileAsync: mocks.parse, exportTraceFile: mocks.export }));
 vi.mock('../local/files.js', () => ({ downloadFile: mocks.download }));
 vi.mock('../services/demoApi.js', () => ({ fetchTraces: mocks.sampleTraces, fetchTraceById: mocks.sampleDetail }));
 
@@ -36,7 +37,7 @@ beforeEach(() => {
   mocks.choose.mockImplementation(async (mode: 'sample' | 'workspace') => { mocks.mode = mode; notify(); });
   mocks.replace.mockImplementation(async (traces: TraceDetail[]) => { mocks.traces = traces; mocks.mode = 'workspace'; notify(); });
   mocks.remove.mockImplementation(async () => { mocks.traces = []; notify(); });
-  mocks.parse.mockResolvedValue([recorded]);
+  mocks.parse.mockResolvedValue({ traces: [recorded], report: { importedSpans: 1, skippedSpans: 0, skipped: [], adjusted: [] } });
   mocks.export.mockReturnValue('{"data":[]}');
   mocks.sampleTraces.mockResolvedValue([recorded.summary]);
   mocks.sampleDetail.mockResolvedValue(recorded);
@@ -111,10 +112,51 @@ describe('Local workspace controls', () => {
     render(<WorkspaceBar />);
     const dialog = await openImport(user);
     await user.click(within(dialog).getByRole('button', { name: 'Replace workspace' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Storage quota exceeded');
+    const confirm = await screen.findByRole('dialog', { name: 'Replace your workspace' });
+    await user.click(within(confirm).getByRole('button', { name: 'Replace workspace' }));
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent('Storage quota exceeded');
     expect(mocks.traces).toEqual([recorded]);
     expect(screen.getByText(/1 imported trace\./)).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Replace workspace' })).toBeEnabled();
+    expect(within(confirm).getByRole('button', { name: 'Replace workspace' })).toBeEnabled();
+  });
+
+  it('asks before replacing a saved workspace, naming what is replaced, and leaves it alone on cancel', async () => {
+    mocks.mode = 'workspace'; mocks.traces = [recorded, recorded];
+    const user = userEvent.setup();
+    render(<WorkspaceBar />);
+    const dialog = await openImport(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Replace workspace' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Replace your workspace' });
+    expect(screen.queryByRole('dialog', { name: 'Import trace file' })).not.toBeInTheDocument();
+    expect(confirm).toHaveTextContent('This replaces your workspace of 2 traces and 2 spans.');
+    expect(confirm).toHaveTextContent('It will hold 1 trace and 1 span from traces.json.');
+    expect(confirm).toContainElement(document.activeElement as HTMLElement);
+    expect(await axe(document.body)).toHaveNoViolations();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(mocks.traces).toEqual([recorded, recorded]);
+    expect(screen.getByRole('button', { name: 'Import traces' })).toHaveFocus();
+  });
+
+  it('replaces the saved workspace after the confirmation and shows what was imported or skipped', async () => {
+    mocks.mode = 'workspace'; mocks.traces = [recorded];
+    mocks.parse.mockResolvedValueOnce({ traces: [recorded], report: { importedSpans: 5, skippedSpans: 2, adjusted: [
+      { reason: 'empty event name replaced with "unnamed event"', count: 1, example: 'resourceSpans[0].scopeSpans[0].spans[3].events[0].name' }],
+    skipped: [{ reason: 'duplicate span ID in the same trace', count: 2, example: 'resourceSpans[0].scopeSpans[0].spans[4]' }] } });
+    const user = userEvent.setup();
+    render(<WorkspaceBar />);
+    const dialog = await openImport(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Replace workspace' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Replace your workspace' });
+    await user.click(within(confirm).getByRole('button', { name: 'Replace workspace' }));
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith([recorded]));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Imported 5 spans, skipped 2: duplicate span ID in the same trace (2).');
+    expect(status).toHaveTextContent('Duplicate span ID in the same trace: 2, first at resourceSpans[0].scopeSpans[0].spans[4].');
+    expect(status).toHaveTextContent('Empty event name replaced with "unnamed event": 1');
   });
 
   it('exports the selected imported data as a JSON backup', async () => {
@@ -150,8 +192,24 @@ describe('Local workspace controls', () => {
     const user = userEvent.setup();
     render(<WorkspaceBar />);
     expect(await screen.findByRole('alert')).toHaveTextContent('Browser storage is unavailable');
+    expect(screen.queryByRole('button', { name: 'Clear workspace' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Import traces' }));
     expect(screen.getByRole('dialog', { name: 'Import trace file' })).toBeInTheDocument();
     expect(screen.getByLabelText('Trace JSON file')).toBeEnabled();
+  });
+
+  it('reports an unreadable saved workspace as such and always offers to clear it', async () => {
+    mocks.initialize.mockRejectedValueOnce(new SavedWorkspaceError('The saved workspace in this browser cannot be read (bad file). Clear it to start again, or import a backup file to replace it.'));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<WorkspaceBar />);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('cannot be read');
+    expect(alert).not.toHaveTextContent('Browser storage is unavailable');
+    await user.click(screen.getByRole('button', { name: 'Clear workspace' }));
+    await waitFor(() => expect(mocks.remove).toHaveBeenCalledOnce());
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('cannot be read'));
+    expect(screen.queryByRole('button', { name: 'Clear workspace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
