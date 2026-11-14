@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.1] - 2026-11-14
+
+### Fixed
+- Line-delimited OpenTelemetry files from the Collector file exporter, and Tempo traces (`batches`), can now be imported. A bad line is reported by line number.
+- A file of up to 32 MiB is accepted as stated. The size limit applies to the file you choose, and the saved workspace no longer stores every attribute twice.
+- One odd span no longer rejects a whole file. Repeated span IDs and spans deeper than 128 parents are skipped, empty values, empty event names, numeric timestamps and extra `CHILD_OF` references are accepted, and the import lists what was skipped or adjusted.
+- The saved workspace is read without parsing a file again, so the page no longer stalls on start with a large workspace. Workspaces saved by version 1.1.0 are converted on first load.
+- A saved workspace that cannot be read is reported as unreadable instead of as unavailable browser storage, and Clear workspace is offered so it can be removed.
+- Importing over a saved workspace asks first and states how many traces and spans it replaces.
+- The timing panel rounds durations to three decimals, and a trace takes its HTTP status from its root span.
+- A new version of the offline app is now picked up: the page is fetched from the network first, and a notice offers a Reload button when an update is ready.
+- Exporting traces is more reliable: the temporary download link now stays valid for ten seconds instead of being released at once.
+
 ## [Unreleased]
 
 ### Added
