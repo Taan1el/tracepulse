@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import jaegerFixture from './fixtures/jaeger-local.json';
 import otlpFixture from './fixtures/otlp-local.json';
-import { buildTraceForest, exportTraceFile, MAX_TRACE_FILE_BYTES, parseTraceFile, parseTraceFileAsync, TRACE_WORKER_THRESHOLD_BYTES } from '../local/traceFiles.js';
+import { buildTraceForest, describeImport, exportTraceFile, importTraceFile, importTraceFileAsync, MAX_TRACE_FILE_BYTES, parseTraceFile, parseTraceFileAsync, TRACE_WORKER_THRESHOLD_BYTES } from '../local/traceFiles.js';
 import { analyzeTrace } from '../local/traceAnalysis.js';
 import type { SpanRecord, TraceDetail } from '../../../shared/types.js';
 
@@ -84,20 +84,89 @@ describe('local trace files', () => {
     const otlp = mutableOtlp();
     otlp.resourceSpans[0].scopeSpans[0].spans[0].endTimeUnixNano = '1791054000123000000';
     expect(() => parseTraceFile(JSON.stringify(otlp), 'end.json')).toThrow(/end.json: .*spans\[0\].endTimeUnixNano.*greater than or equal/);
-    const unsafe = { ...otlpSpan(1), startTimeUnixNano: 1791054000000000000 };
-    expect(() => parseTraceFile(JSON.stringify(otlpEnvelope([unsafe])), 'precision.json')).toThrow(/startTimeUnixNano.*lose precision/);
+    const negative = { ...otlpSpan(1), startTimeUnixNano: -5 };
+    expect(() => parseTraceFile(JSON.stringify(otlpEnvelope([negative])), 'negative.json')).toThrow(/startTimeUnixNano.*non-negative/);
+    const text = { ...otlpSpan(1), startTimeUnixNano: 'soon' };
+    expect(() => parseTraceFile(JSON.stringify(otlpEnvelope([text])), 'text.json')).toThrow(/startTimeUnixNano.*number or numeric string/);
   });
 
-  it('rejects duplicate span IDs within a trace but allows the same ID in distinct traces', () => {
+  it('skips repeated span IDs within a trace, keeps the first, and allows the same ID in distinct traces', () => {
     expect(parseTraceFile(jaegerText, 'multi.json')).toHaveLength(2);
-    const spans = [otlpSpan(1), otlpSpan(1)];
-    expect(() => parseTraceFile(JSON.stringify(otlpEnvelope(spans)), 'duplicate.json')).toThrow(/duplicate.json: .*spans\[1\].spanId.*unique/);
+    const first = otlpSpan(1);
+    const repeat = { ...otlpSpan(1), name: 'repeat' };
+    const result = importTraceFile(JSON.stringify(otlpEnvelope([first, repeat, otlpSpan(2)])), 'duplicate.json');
+    expect(result.traces[0].rawSpans.map(span => span.name)).toEqual(['span 1', 'span 2']);
+    expect(result.report).toMatchObject({ importedSpans: 2, skippedSpans: 1, skipped: [{ reason: expect.stringContaining('duplicate span ID'), count: 1, example: 'resourceSpans[0].scopeSpans[0].spans[1]' }] });
+    expect(describeImport(result.report).headline).toBe('Imported 2 spans, skipped 1: duplicate span ID in the same trace (1).');
   });
 
-  it('rejects cycles and excessive depth iteratively with source field paths', () => {
+  it('rejects cycles, and skips spans deeper than 128 parents with their source path', () => {
     expect(() => parseTraceFile(JSON.stringify(otlpEnvelope([otlpSpan(1, 2), otlpSpan(2, 1)])), 'cycle.json')).toThrow(/cycle.json: .*parentSpanId.*cycle/);
     const spans = Array.from({ length: 130 }, (_, index) => otlpSpan(index + 1, index === 0 ? undefined : index));
-    expect(() => parseTraceFile(JSON.stringify(otlpEnvelope(spans)), 'depth.json')).toThrow(/depth.json: .*parentSpanId.*128/);
+    const result = importTraceFile(JSON.stringify(otlpEnvelope(spans)), 'depth.json');
+    expect(result.traces[0].rawSpans).toHaveLength(129);
+    expect(result.report.skipped).toEqual([expect.objectContaining({ count: 1, example: 'resourceSpans[0].scopeSpans[0].spans[129]' })]);
+    expect(result.report.skipped[0].reason).toContain('128 parent levels');
+  });
+
+  it('reads line-delimited OTLP JSON from the collector file exporter and merges every line', () => {
+    const lines = [otlpSpan(1), otlpSpan(2, 1)].map(span => JSON.stringify(otlpEnvelope([span])));
+    const text = `${lines[0]}\n\n${lines[1]}\r\n`;
+    const result = importTraceFile(text, 'export.jsonl');
+    expect(result.traces).toHaveLength(1);
+    expect(result.traces[0].rawSpans.map(span => span.name)).toEqual(['span 1', 'span 2']);
+    expect(result.traces[0].rootSpan.children.map(child => child.name)).toEqual(['span 2']);
+    const several = parseTraceFile(`${JSON.stringify(otlpFixture)}\n${JSON.stringify(otlpFixture)}`, 'twice.jsonl');
+    expect(several.length).toBeGreaterThan(0);
+  });
+
+  it('names the failing line of a line-delimited file', () => {
+    const good = JSON.stringify(otlpEnvelope([otlpSpan(1)]));
+    expect(() => parseTraceFile(`${good}\n${good}\n{"resourceSpans": [\n${good}`, 'bad.jsonl')).toThrow('bad.jsonl: line 3: invalid JSON');
+    expect(() => parseTraceFile(`${good}\n{"other":1}`, 'other.jsonl')).toThrow('other.jsonl: line 2: expected an OTLP object with resourceSpans');
+    const broken = JSON.stringify(otlpEnvelope([{ ...otlpSpan(2), spanId: 'zz' }]));
+    expect(() => parseTraceFile(`${good}\n${broken}`, 'span.jsonl')).toThrow(/span.jsonl: line 2: resourceSpans\[0\].scopeSpans\[0\].spans\[0\].spanId/);
+    expect(() => parseTraceFile('{\n  "resourceSpans": [', 'pretty.json')).toThrow('pretty.json: $: invalid JSON');
+  });
+
+  it('imports Tempo batches, including the older instrumentationLibrarySpans name', () => {
+    const batch = { batches: [{ resource: { attributes: [{ key: 'service.name', value: { stringValue: 'tempo-service' } }] }, scopeSpans: [{ spans: [otlpSpan(1)] }] }] };
+    expect(parseTraceFile(JSON.stringify(batch), 'tempo.json')[0].rawSpans[0]).toMatchObject({ serviceName: 'tempo-service', name: 'span 1' });
+    const legacy = { batches: [{ instrumentationLibrarySpans: [{ spans: [otlpSpan(2)] }] }] };
+    expect(parseTraceFile(JSON.stringify(legacy), 'old-tempo.json')[0].rawSpans[0].name).toBe('span 2');
+  });
+
+  it('accepts an empty OTLP value, an empty event name and numeric nanosecond timestamps, and reports each', () => {
+    const file = mutableOtlp();
+    const span = file.resourceSpans[0].scopeSpans[0].spans[0] as Record<string, unknown>;
+    span.attributes = [{ key: 'blank', value: {} }];
+    span.events = [{ name: '', timeUnixNano: '1791054000000000100' }];
+    const numeric = { ...otlpSpan(7), startTimeUnixNano: 1791054000000000000, endTimeUnixNano: '1791054000010000000.0' };
+    file.resourceSpans[0].scopeSpans[0].spans.push(numeric as never);
+    const result = importTraceFile(JSON.stringify(file), 'odd.json');
+    const parsed = result.traces.flatMap(trace => trace.rawSpans);
+    expect(parsed.find(item => item.id === span.spanId)).toMatchObject({ attributes: { blank: '' }, events: [{ name: 'unnamed event' }] });
+    expect(parsed.find(item => item.id === numeric.spanId)).toBeDefined();
+    expect(result.report.skippedSpans).toBe(0);
+    const reasons = result.report.adjusted.map(item => item.reason);
+    for (const expected of [/empty attribute value/, /empty event name/, /beyond 2\^53/]) expect(reasons.some(reason => expected.test(reason))).toBe(true);
+    expect(describeImport(result.report).details).toHaveLength(3);
+  });
+
+  it('uses the first CHILD_OF reference of a Jaeger span and reports the rest', () => {
+    const file = mutableJaeger();
+    const trace = file.data[0];
+    const child = trace.spans[1];
+    child.references.push({ refType: 'CHILD_OF', traceID: trace.traceID, spanID: '0000000000000003' });
+    const result = importTraceFile(JSON.stringify(file), 'two-parents.json');
+    expect(result.traces[0].rawSpans.find(span => span.id === child.spanID.padStart(16, '0'))?.parentSpanId).toBe('0000000000000001');
+    expect(result.report.adjusted).toEqual([expect.objectContaining({ count: 1, example: 'data[0].spans[1].references' })]);
+  });
+
+  it('takes the HTTP status from the root span, not the last span', () => {
+    const root = { ...otlpSpan(1), attributes: [{ key: 'http.status_code', value: { intValue: '200' } }] };
+    const downstream = { ...otlpSpan(2, 1), attributes: [{ key: 'http.status_code', value: { intValue: '503' } }], startTimeUnixNano: '1791054000002000000' };
+    expect(parseTraceFile(JSON.stringify(otlpEnvelope([root, downstream])), 'status.json')[0].summary.httpStatus).toBe(200);
   });
 
   it('supports a single Jaeger trace envelope and a UTF-8 BOM', () => {

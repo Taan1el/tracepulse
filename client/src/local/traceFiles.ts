@@ -11,6 +11,30 @@ export interface TraceFileSpan extends SpanRecord {
   sourceTiming?: { startTimeUnixNano: string; endTimeUnixNano: string };
 }
 
+/** One kind of problem found while importing, with how often it happened and where it first appeared. */
+export interface ImportNote { reason: string; count: number; example: string }
+export interface ImportReport { importedSpans: number; skippedSpans: number; skipped: ImportNote[]; adjusted: ImportNote[] }
+export interface ImportResult { traces: TraceDetail[]; report: ImportReport }
+
+const MAX_PARENT_DEPTH = 128;
+const REASON = {
+  duplicate: 'duplicate span ID in the same trace',
+  deep: `span deeper than ${MAX_PARENT_DEPTH} parent levels`,
+  emptyValue: 'empty attribute value kept as an empty string',
+  emptyEvent: 'empty event name replaced with "unnamed event"',
+  numberTime: 'timestamp written as a JSON number beyond 2^53, precision limited to about 256 ns',
+  childOf: 'span with several CHILD_OF references, first one used',
+};
+// Parsing is synchronous, so one collector at a time is enough and avoids threading it through every reader.
+let notes: { skipped: Map<string, ImportNote>; adjusted: Map<string, ImportNote> } | null = null;
+function note(kind: 'skipped' | 'adjusted', reason: string, path: string): void {
+  const bucket = notes?.[kind];
+  if (!bucket) return;
+  const existing = bucket.get(reason);
+  if (existing) existing.count++;
+  else bucket.set(reason, { reason, count: 1, example: path });
+}
+
 type Attributes = SpanRecord['attributes'];
 type InputSpan = Omit<TraceFileSpan, 'durationMs'>;
 interface LocatedSpan { span: InputSpan; path: string; fields: Record<string, string> }
@@ -36,11 +60,12 @@ function hex(value: unknown, width: number, path: string, jaeger = false): strin
 }
 function nanos(value: unknown, path: string): bigint {
   if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) || value < 0) fail(path, 'expected an unsigned integer string; large numeric timestamps lose precision');
-    value = String(value);
+    if (!Number.isFinite(value) || value < 0) fail(path, 'expected a non-negative nanosecond timestamp');
+    if (!Number.isSafeInteger(value)) note('adjusted', REASON.numberTime, path);
+    value = String(BigInt(Math.trunc(value)));
   }
-  if (typeof value !== 'string' || !/^\d+$/.test(value)) fail(path, 'expected an unsigned integer nanosecond string');
-  const result = BigInt(value);
+  if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) fail(path, 'expected a nanosecond timestamp as a number or numeric string');
+  const result = BigInt(value.split('.')[0]);
   if (result > MAX_TIME_NS) fail(path, 'timestamp exceeds the supported millisecond range');
   return result;
 }
@@ -79,7 +104,8 @@ function otlpValue(value: unknown, path: string, depth = 0): string | number | b
   if (depth > 32) fail(path, 'attribute nesting exceeds 32 levels');
   const item = object(value, path);
   const variants = ['stringValue', 'boolValue', 'intValue', 'doubleValue', 'bytesValue', 'arrayValue', 'kvlistValue'].filter(key => item[key] !== undefined);
-  if (variants.length !== 1) fail(path, 'expected one OTLP value field');
+  if (variants.length === 0) { note('adjusted', REASON.emptyValue, path); return ''; }
+  if (variants.length > 1) fail(path, 'expected one OTLP value field');
   const key = variants[0];
   if (key === 'stringValue' || key === 'bytesValue') {
     if (typeof item[key] !== 'string') fail(`${path}.${key}`, 'expected a string');
@@ -161,7 +187,7 @@ function readJaeger(input: Record<string, unknown>): LocatedSpan[] {
         const refTraceId = ref.traceID === undefined ? traceId : hex(ref.traceID, 32, `${refPath}.traceID`, true);
         const refSpanId = hex(ref.spanID, 16, `${refPath}.spanID`, true);
         if (ref.refType === 'CHILD_OF' && refTraceId === traceId) {
-          if (parentSpanId !== null) fail(`${path}.references`, 'a span cannot have multiple local CHILD_OF parents');
+          if (parentSpanId !== null) { note('adjusted', REASON.childOf, `${path}.references`); return; }
           parentSpanId = refSpanId;
           parentPath = `${refPath}.spanID`;
         }
@@ -213,16 +239,18 @@ function readJaeger(input: Record<string, unknown>): LocatedSpan[] {
   });
   return result;
 }
-function readOtlp(input: Record<string, unknown>): LocatedSpan[] {
-  const result: LocatedSpan[] = [];
-  array(input.resourceSpans, 'resourceSpans').forEach((entry, resourceIndex) => {
-    const resourcePath = `resourceSpans[${resourceIndex}]`;
+/** OTLP JSON: `resourceSpans` (collector exports) or `batches` (Tempo). `root` prefixes error paths, for example with a line number. */
+function readOtlp(input: Record<string, unknown>, root: string, result: LocatedSpan[]): void {
+  const listKey = input.resourceSpans !== undefined ? 'resourceSpans' : 'batches';
+  array(input[listKey], `${root}${listKey}`).forEach((entry, resourceIndex) => {
+    const resourcePath = `${root}${listKey}[${resourceIndex}]`;
     const resourceSpan = object(entry, resourcePath);
     const resource = resourceSpan.resource === undefined ? {} : object(resourceSpan.resource, `${resourcePath}.resource`);
     const resourceAttributes = otlpAttributes(resource.attributes, `${resourcePath}.resource.attributes`);
     const serviceName = typeof resourceAttributes['service.name'] === 'string' && resourceAttributes['service.name'].trim() ? resourceAttributes['service.name'] : 'unknown-service';
-    array(resourceSpan.scopeSpans, `${resourcePath}.scopeSpans`).forEach((entry, scopeIndex) => {
-      const scopePath = `${resourcePath}.scopeSpans[${scopeIndex}]`;
+    const scopeKey = resourceSpan.scopeSpans === undefined && resourceSpan.instrumentationLibrarySpans !== undefined ? 'instrumentationLibrarySpans' : 'scopeSpans';
+    array(resourceSpan[scopeKey], `${resourcePath}.${scopeKey}`).forEach((entry, scopeIndex) => {
+      const scopePath = `${resourcePath}.${scopeKey}[${scopeIndex}]`;
       const scope = object(entry, scopePath);
       array(scope.spans, `${scopePath}.spans`).forEach((entry, spanIndex) => {
         if (result.length >= MAX_TRACE_FILE_SPANS) fail(`${scopePath}.spans`, `maximum ${MAX_TRACE_FILE_SPANS.toLocaleString('en-US')} spans per file`);
@@ -235,7 +263,9 @@ function readOtlp(input: Record<string, unknown>): LocatedSpan[] {
         const events: SpanEvent[] = span.events === undefined ? [] : array(span.events, `${path}.events`).map((entry, eventIndex) => {
           const eventPath = `${path}.events[${eventIndex}]`;
           const event = object(entry, eventPath);
-          return { name: name(event.name, `${eventPath}.name`), timestampMs: milliseconds(nanos(event.timeUnixNano, `${eventPath}.timeUnixNano`)), attributes: otlpAttributes(event.attributes, `${eventPath}.attributes`) };
+          const blank = event.name === undefined || (typeof event.name === 'string' && !event.name.trim());
+          if (blank) note('adjusted', REASON.emptyEvent, `${eventPath}.name`);
+          return { name: blank ? 'unnamed event' : name(event.name, `${eventPath}.name`), timestampMs: milliseconds(nanos(event.timeUnixNano, `${eventPath}.timeUnixNano`)), attributes: otlpAttributes(event.attributes, `${eventPath}.attributes`) };
         });
         const parentSpanId = span.parentSpanId === undefined || span.parentSpanId === '' || span.parentSpanId === '0'.repeat(16) ? null : hex(span.parentSpanId, 16, `${path}.parentSpanId`);
         result.push({ path, fields: { id: `${path}.spanId`, traceId: `${path}.traceId`, startTimeMs: `${path}.startTimeUnixNano`, endTimeMs: `${path}.endTimeUnixNano` }, span: {
@@ -248,8 +278,8 @@ function readOtlp(input: Record<string, unknown>): LocatedSpan[] {
       });
     });
   });
-  return result;
 }
+
 function spanTimes(span: SpanRecord): [bigint, bigint] {
   const precise = (span as TraceFileSpan).sourceTiming;
   if (precise) return [BigInt(precise.startTimeUnixNano), BigInt(precise.endTimeUnixNano)];
@@ -315,10 +345,15 @@ function buildTrace(located: LocatedSpan[]): TraceDetail {
   const rawSpans: TraceFileSpan[] = validated.map((span, index) => ({ ...span, sourceTiming: located[index].span.sourceTiming, durationMs: milliseconds(spanTimes(located[index].span as SpanRecord)[1] - spanTimes(located[index].span as SpanRecord)[0]) }));
   const rootSpan = makeForest(rawSpans)[0];
   const [start, end] = traceBounds(rawSpans);
-  let httpStatus: number | null = null;
-  for (const span of rawSpans) {
-    const code = span.attributes['http.response.status_code'] ?? span.attributes['http.status_code'];
-    if (typeof code === 'number') httpStatus = code;
+  // The request's status is the root span's. Without one, the earliest span that carries a status stands in for it.
+  const statusOf = (span: SpanRecord) => { const code = span.attributes['http.response.status_code'] ?? span.attributes['http.status_code']; return typeof code === 'number' ? code : null; };
+  let httpStatus = statusOf(rootSpan);
+  if (httpStatus === null) {
+    let earliest = Infinity;
+    for (const span of rawSpans) {
+      const code = statusOf(span);
+      if (code !== null && span.startTimeMs < earliest) { earliest = span.startTimeMs; httpStatus = code; }
+    }
   }
   return { rawSpans, rootSpan, summary: {
     id: rawSpans[0].traceId, rootSpanName: rootSpan.name, rootServiceName: rootSpan.serviceName,
@@ -328,15 +363,80 @@ function buildTrace(located: LocatedSpan[]): TraceDetail {
   } };
 }
 
-/** Jaeger query JSON or one OTLP JSON export envelope. Reads only local content. */
-export function parseTraceFile(text: string, filename: string): TraceDetail[] {
+/** Keeps the first span of each ID. Later repeats are skipped and reported instead of rejecting the file. */
+function dropDuplicates(items: LocatedSpan[]): LocatedSpan[] {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    if (!seen.has(item.span.id)) { seen.add(item.span.id); return true; }
+    note('skipped', REASON.duplicate, item.path);
+    return false;
+  });
+}
+
+/** Skips spans more than MAX_PARENT_DEPTH parent edges below a root. Cycles are left for the validator to reject. */
+function dropDeepSpans(items: LocatedSpan[]): LocatedSpan[] {
+  const byId = new Map(items.map(item => [item.span.id, item]));
+  const depths = new Map<string, number>();
+  for (const item of items) {
+    const chain: LocatedSpan[] = [];
+    const visiting = new Set<string>();
+    let base = -1;
+    let cyclic = false;
+    for (let current: LocatedSpan | undefined = item; current; ) {
+      const known = depths.get(current.span.id);
+      if (known !== undefined) { base = known; break; }
+      if (visiting.has(current.span.id)) { cyclic = true; break; }
+      visiting.add(current.span.id);
+      chain.push(current);
+      current = current.span.parentSpanId ? byId.get(current.span.parentSpanId) : undefined;
+    }
+    let depth = base;
+    for (let index = chain.length - 1; index >= 0; index--) { depth = cyclic ? 0 : depth + 1; depths.set(chain[index].span.id, depth); }
+  }
+  return items.filter(item => {
+    if ((depths.get(item.span.id) ?? 0) <= MAX_PARENT_DEPTH) return true;
+    note('skipped', REASON.deep, item.path);
+    return false;
+  });
+}
+
+function pushLocated(located: LocatedSpan[], input: Record<string, unknown>, root = ''): void {
+  if (input.resourceSpans !== undefined || input.batches !== undefined) readOtlp(input, root, located);
+  else if (!root && (input.data !== undefined || input.spans !== undefined)) located.push(...readJaeger(input));
+  else fail(root ? root.replace(/: $/, '') : '$', 'unsupported format; expected Jaeger data[].spans[], OTLP resourceSpans[].scopeSpans[].spans[], Tempo batches[], or OTLP JSON with one object per line');
+}
+
+/** One JSON document, or line-delimited OTLP JSON as written by the collector file exporter (one object per line). */
+function readDocument(text: string): LocatedSpan[] {
+  const located: LocatedSpan[] = [];
+  let parsed: unknown;
+  let whole = true;
+  try { parsed = JSON.parse(text); } catch { whole = false; }
+  if (whole) { pushLocated(located, object(parsed, '$')); return located; }
+  const lines = text.split(/\r?\n/).map((line, index) => ({ number: index + 1, text: line.trim() })).filter(line => line.text);
+  // A pretty-printed document starts with a bare brace; line-delimited input has a complete object on the first line.
+  if (lines.length < 2 || !lines[0].text.startsWith('{') || !lines[0].text.endsWith('}')) {
+    return fail('$', 'invalid JSON; expected a Jaeger or OTLP trace file, or OTLP JSON with one object per line');
+  }
+  for (const line of lines) {
+    const label = `line ${line.number}`;
+    let value: unknown;
+    try { value = JSON.parse(line.text); } catch { fail(label, 'invalid JSON; expected one OTLP JSON object per line'); }
+    const input = object(value, label);
+    if (input.resourceSpans === undefined && input.batches === undefined) fail(label, 'expected an OTLP object with resourceSpans');
+    pushLocated(located, input, `${label}: `);
+  }
+  return located;
+}
+
+/** Jaeger JSON, OTLP JSON (whole file or one object per line) or Tempo batches. Reads only local content and skips what it cannot place. */
+export function importTraceFile(text: string, filename: string): ImportResult {
+  const outer = notes;
+  const current = { skipped: new Map<string, ImportNote>(), adjusted: new Map<string, ImportNote>() };
+  notes = current;
   try {
     if (text.length > MAX_TRACE_FILE_BYTES || new TextEncoder().encode(text).byteLength > MAX_TRACE_FILE_BYTES) fail('$', 'maximum file size is 32 MiB');
-    let parsed: unknown;
-    try { parsed = JSON.parse(text.replace(/^\uFEFF/, '')); }
-    catch { return fail('$', 'invalid JSON; expected a Jaeger or OTLP trace file'); }
-    const input = object(parsed, '$');
-    const located = input.resourceSpans !== undefined ? readOtlp(input) : input.data !== undefined || input.spans !== undefined ? readJaeger(input) : fail('$', 'unsupported format; expected Jaeger data[].spans[] or OTLP resourceSpans[].scopeSpans[].spans[]');
+    const located = readDocument(text.replace(/^﻿/, ''));
     if (!located.length) fail('$', 'the file contains no spans');
     const groups = new Map<string, LocatedSpan[]>();
     for (const item of located) {
@@ -344,10 +444,38 @@ export function parseTraceFile(text: string, filename: string): TraceDetail[] {
       group.push(item);
       groups.set(item.span.traceId, group);
     }
-    return [...groups.values()].map(buildTrace);
+    const traces = [...groups.values()].map(group => buildTrace(dropDeepSpans(dropDuplicates(group))));
+    const skipped = [...current.skipped.values()];
+    return { traces, report: {
+      importedSpans: traces.reduce((total, trace) => total + trace.rawSpans.length, 0),
+      skippedSpans: skipped.reduce((total, item) => total + item.count, 0),
+      skipped, adjusted: [...current.adjusted.values()],
+    } };
   } catch (error) {
     throw new Error(`${filename}: ${error instanceof Error ? error.message : 'could not parse trace file'}`);
+  } finally {
+    notes = outer;
   }
+}
+
+export function parseTraceFile(text: string, filename: string): TraceDetail[] { return importTraceFile(text, filename).traces; }
+
+/** "Imported N spans, skipped M: reasons." plus one line per problem with where it first appeared. */
+export function describeImport(report: ImportReport): { headline: string; details: string[] } {
+  const skipped = report.skippedSpans ? `, skipped ${report.skippedSpans}: ${report.skipped.map(item => `${item.reason} (${item.count})`).join(', ')}` : '';
+  const sentence = (item: ImportNote) => `${item.reason[0].toUpperCase()}${item.reason.slice(1)}: ${item.count}, first at ${item.example}.`;
+  return {
+    headline: `Imported ${report.importedSpans.toLocaleString('en-US')} ${report.importedSpans === 1 ? 'span' : 'spans'}${skipped}.`,
+    details: [...report.skipped, ...report.adjusted].map(sentence),
+  };
+}
+
+/** The normalized form kept in browser storage: spans are stored once, without the derived tree. */
+export interface StoredTrace { rawSpans: TraceFileSpan[]; summary: TraceDetail['summary'] }
+export function storableTrace(trace: TraceDetail): StoredTrace { return { rawSpans: trace.rawSpans as TraceFileSpan[], summary: trace.summary }; }
+export function restoreTrace(stored: StoredTrace): TraceDetail {
+  if (!stored || !Array.isArray(stored.rawSpans) || !stored.rawSpans.length || typeof stored.summary !== 'object' || !stored.summary) throw new Error('a stored trace has no spans');
+  return { rawSpans: stored.rawSpans, summary: stored.summary, rootSpan: makeForest(stored.rawSpans)[0] };
 }
 
 function microExport(value: bigint): number | string {
@@ -387,20 +515,23 @@ function readFile(file: File): Promise<string> {
   });
 }
 
-export async function parseTraceFileAsync(file: File): Promise<TraceDetail[]> {
+/** Reads and imports a local file, in a worker once it is large enough to block the page. */
+export async function importTraceFileAsync(file: File): Promise<ImportResult> {
   if (file.size > MAX_TRACE_FILE_BYTES) throw new Error(`${file.name}: maximum file size is 32 MiB`);
-  if (file.size < TRACE_WORKER_THRESHOLD_BYTES || typeof Worker === 'undefined') return parseTraceFile(await readFile(file), file.name);
+  if (file.size < TRACE_WORKER_THRESHOLD_BYTES || typeof Worker === 'undefined') return importTraceFile(await readFile(file), file.name);
   return new Promise((resolve, reject) => {
     let worker: Worker;
     try { worker = new Worker(new URL('./trace.worker.ts', import.meta.url), { type: 'module' }); }
     catch { reject(new Error(`${file.name}: could not start the local import worker`)); return; }
-    worker.onmessage = (event: MessageEvent<{ traces?: TraceDetail[]; error?: string }>) => {
+    worker.onmessage = (event: MessageEvent<{ traces?: TraceDetail[]; report?: ImportReport; error?: string }>) => {
       worker.terminate();
       if (event.data.error) reject(new Error(event.data.error));
-      else if (event.data.traces) resolve(event.data.traces);
+      else if (event.data.traces) resolve({ traces: event.data.traces, report: event.data.report ?? { importedSpans: event.data.traces.reduce((total, trace) => total + trace.rawSpans.length, 0), skippedSpans: 0, skipped: [], adjusted: [] } });
       else reject(new Error(`${file.name}: import worker returned no traces`));
     };
     worker.onerror = () => { worker.terminate(); reject(new Error(`${file.name}: local import worker failed`)); };
     worker.postMessage(file);
   });
 }
+
+export async function parseTraceFileAsync(file: File): Promise<TraceDetail[]> { return (await importTraceFileAsync(file)).traces; }
