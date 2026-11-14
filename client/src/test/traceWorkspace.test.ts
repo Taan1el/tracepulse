@@ -144,6 +144,83 @@ describe('Imported trace workspace', () => {
     expect(restored.workspaceTraces().map(item => item.summary.id)).toEqual(['b'.repeat(32)]);
   });
 
+  it('stores a file close to the 32 MiB limit and restores it', async () => {
+    const files = await import('../local/traceFiles.js');
+    const padding = 'x'.repeat(12_000);
+    const spans = Array.from({ length: 2_500 }, (_, index) => ({
+      traceId: 'a'.repeat(32), spanId: (index + 1).toString(16).padStart(16, '0'), parentSpanId: index ? '0000000000000001' : '',
+      name: `span ${index}`, startTimeUnixNano: '1791054000000000000', endTimeUnixNano: '1791054000010000000',
+      attributes: [{ key: 'payload', value: { stringValue: padding } }],
+    }));
+    const text = JSON.stringify({ resourceSpans: [{ scopeSpans: [{ spans }] }] });
+    expect(text.length).toBeGreaterThan(29_000_000);
+    expect(text.length).toBeLessThan(files.MAX_TRACE_FILE_BYTES);
+    const file = new File([text], 'near-limit.json');
+    const imported = files.parseTraceFile(text, file.name);
+
+    const workspace = await import('../local/traceWorkspace.js');
+    await workspace.replaceWorkspace(imported);
+    vi.resetModules();
+    const restored = await import('../local/traceWorkspace.js');
+    await restored.initializeWorkspace();
+    const [back] = restored.workspaceTraces();
+    expect(back.rawSpans).toHaveLength(2_500);
+    expect(back.rawSpans[2_499].attributes.payload).toBe(padding);
+  }, 60_000);
+
+  it('restores the saved workspace without parsing any file again', async () => {
+    let workspace = await import('../local/traceWorkspace.js');
+    await workspace.replaceWorkspace([trace('a'.repeat(32))]);
+    vi.resetModules();
+    const files = await import('../local/traceFiles.js');
+    const parse = vi.spyOn(files, 'parseTraceFile');
+    const parseAsync = vi.spyOn(files, 'importTraceFileAsync');
+    workspace = await import('../local/traceWorkspace.js');
+    await workspace.initializeWorkspace();
+    expect(workspace.workspaceTraces()).toHaveLength(1);
+    expect(workspace.workspaceTraces()[0].rootSpan.children).toHaveLength(1);
+    expect(parse).not.toHaveBeenCalled();
+    expect(parseAsync).not.toHaveBeenCalled();
+  });
+
+  it('reads a workspace saved as an exported file by an earlier version and keeps the normalized form afterwards', async () => {
+    const files = await import('../local/traceFiles.js');
+    const storage = await import('../local/workspace.js');
+    const recorded = trace('a'.repeat(32));
+    await storage.saveWorkspace({ version: 1, source: files.exportTraceFile([recorded]) });
+    const workspace = await import('../local/traceWorkspace.js');
+    await workspace.initializeWorkspace();
+    expectRecordedSpans(workspace.workspaceTraces()[0].rawSpans, recorded.rawSpans);
+    expect(await storage.loadWorkspace()).toMatchObject({ version: 2 });
+  });
+
+  it('tells an unreadable saved workspace apart from unavailable storage, and can clear the former', async () => {
+    const storage = await import('../local/workspace.js');
+    await storage.saveWorkspace({ version: 1, source: '{broken JSON' });
+    await storage.saveMode('workspace');
+    const workspace = await import('../local/traceWorkspace.js');
+    await expect(workspace.initializeWorkspace()).rejects.toBeInstanceOf(storage.SavedWorkspaceError);
+    await workspace.removeWorkspace();
+    expect(await storage.loadWorkspace()).toBeNull();
+    await expect(workspace.initializeWorkspace()).resolves.toBeUndefined();
+    expect(workspace.workspaceTraces()).toEqual([]);
+    expect(workspace.workspaceMode()).toBe('workspace');
+
+    await storage.saveWorkspace({ version: 9, anything: true });
+    vi.resetModules();
+    const unsupported = await import('../local/traceWorkspace.js');
+    const unsupportedStorage = await import('../local/workspace.js');
+    await expect(unsupported.initializeWorkspace()).rejects.toBeInstanceOf(unsupportedStorage.SavedWorkspaceError);
+
+    vi.resetModules();
+    vi.stubGlobal('indexedDB', { open: () => { throw new Error('Storage blocked'); } });
+    const blocked = await import('../local/traceWorkspace.js');
+    const blockedStorage = await import('../local/workspace.js');
+    const failure = await blocked.initializeWorkspace().catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(blockedStorage.SavedWorkspaceError);
+  });
+
   it('scopes parent links to each trace and keeps service names containing arrows distinct', async () => {
     const workspace = await import('../local/traceWorkspace.js');
     // Every trace intentionally reuses the same span IDs; those IDs are trace-scoped.

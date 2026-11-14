@@ -6,6 +6,9 @@ const STORE_NAME = 'settings';
 const WORKSPACE_KEY = 'workspace';
 const MODE_KEY = 'mode';
 
+/** The saved workspace exists but cannot be used, as opposed to browser storage failing to open. */
+export class SavedWorkspaceError extends Error {}
+
 interface WorkspaceRecord<T> {
   version: 1;
   data: T;
@@ -111,7 +114,7 @@ export function loadWorkspace<T>(): Promise<T | null> {
     const record = await readRecord<WorkspaceRecord<T>>(WORKSPACE_KEY);
     if (record === undefined) return null;
     if (!record || typeof record !== 'object' || record.version !== 1 || !Object.hasOwn(record, 'data')) {
-      throw new Error('Saved browser workspace has an unsupported format. Import a backup to recover it.');
+      throw new SavedWorkspaceError('The saved workspace in this browser has an unsupported format. Clear it to start again, or import a backup file to replace it.');
     }
     return record.data ?? null;
   });
