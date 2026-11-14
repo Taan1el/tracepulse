@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import jaegerFixture from './fixtures/jaeger-local.json';
 import otlpFixture from './fixtures/otlp-local.json';
-import { buildTraceForest, describeImport, exportTraceFile, importTraceFile, importTraceFileAsync, MAX_TRACE_FILE_BYTES, parseTraceFile, parseTraceFileAsync, TRACE_WORKER_THRESHOLD_BYTES } from '../local/traceFiles.js';
+import { buildTraceForest, describeImport, exportTraceFile, importTraceFile, MAX_TRACE_FILE_BYTES, parseTraceFile, parseTraceFileAsync, TRACE_WORKER_THRESHOLD_BYTES } from '../local/traceFiles.js';
 import { analyzeTrace } from '../local/traceAnalysis.js';
 import type { SpanRecord, TraceDetail } from '../../../shared/types.js';
 
@@ -156,7 +156,7 @@ describe('local trace files', () => {
   it('uses the first CHILD_OF reference of a Jaeger span and reports the rest', () => {
     const file = mutableJaeger();
     const trace = file.data[0];
-    const child = trace.spans[1];
+    const child = trace.spans[1] as { spanID: string; references: unknown[] };
     child.references.push({ refType: 'CHILD_OF', traceID: trace.traceID, spanID: '0000000000000003' });
     const result = importTraceFile(JSON.stringify(file), 'two-parents.json');
     expect(result.traces[0].rawSpans.find(span => span.id === child.spanID.padStart(16, '0'))?.parentSpanId).toBe('0000000000000001');

@@ -14,6 +14,41 @@ let html: string;
 let worker: string;
 let files: string[];
 
+class FakeRequest {
+  constructor(public url: string, public init?: Record<string, unknown>) {}
+}
+
+/** Runs the generated worker against fake caches and a fake network, returning what it registered. */
+function startWorker(options: { online: boolean; cached?: Record<string, unknown>; keys?: string[] }) {
+  const handlers: Record<string, (event: unknown) => void> = {};
+  const cached = options.cached ?? {};
+  const added: FakeRequest[][] = [];
+  const deleted: string[] = [];
+  const fetched: Array<{ url: string; init?: Record<string, unknown> }> = [];
+  const skipWaiting = vi.fn(async () => undefined);
+  const cache = {
+    addAll: async (requests: FakeRequest[]) => { added.push(requests); },
+    match: async (request: string | { url: string }) => cached[typeof request === 'string' ? request : new URL(request.url).pathname],
+  };
+  const context: Record<string, unknown> = {
+    URL, Request: FakeRequest,
+    caches: { open: async () => cache, keys: async () => options.keys ?? [], delete: async (key: string) => { deleted.push(key); } },
+    fetch: async (target: string | { url: string }, init?: Record<string, unknown>) => {
+      fetched.push({ url: typeof target === 'string' ? target : target.url, init });
+      if (!options.online) throw new Error('Server is off.');
+      return { body: 'network' };
+    },
+    self: { location: { origin: 'https://local.test' }, addEventListener: (name: string, callback: (event: unknown) => void) => { handlers[name] = callback; }, skipWaiting, clients: { claim: async () => undefined } },
+  };
+  vm.runInNewContext(worker, context);
+  const request = (url: string, mode = 'cors', method = 'GET') => {
+    let response: Promise<unknown> | undefined;
+    handlers.fetch({ request: { method, url, mode }, respondWith: (result: Promise<unknown>) => { response = result; } });
+    return response;
+  };
+  return { handlers, added, deleted, fetched, skipWaiting, request, context };
+}
+
 async function listFiles(directory: string, prefix = ''): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const results = await Promise.all(entries.map((entry) => entry.isDirectory()
@@ -85,6 +120,62 @@ describe('Pages local app build', () => {
     }
   });
 
+  it('chooses a strategy per request: the page goes to the network first, built files to the cache', () => {
+    const { context } = startWorker({ online: true });
+    const choose = context.strategyFor as (request: unknown, url: URL) => string;
+    const url = (path: string) => new URL(`https://local.test${path}`);
+    expect(choose({ method: 'GET', mode: 'navigate' }, url('/tracepulse/'))).toBe('network-first');
+    expect(choose({ method: 'GET', mode: 'cors' }, url('/tracepulse/assets/index-abc.js'))).toBe('cache-first');
+    expect(choose({ method: 'POST', mode: 'cors' }, url('/tracepulse/'))).toBe('pass');
+    expect(choose({ method: 'GET', mode: 'navigate' }, url('/elsewhere/'))).toBe('pass');
+    expect(choose({ method: 'GET', mode: 'navigate' }, new URL('https://other.test/tracepulse/'))).toBe('pass');
+  });
+
+  it('serves the page from the network when online, bypassing the HTTP cache, and falls back to the cached page offline', async () => {
+    const page = { body: 'cached page' };
+    const online = startWorker({ online: true, cached: { '/tracepulse/index.html': page } });
+    expect(await online.request('https://local.test/tracepulse/', 'navigate')).toEqual({ body: 'network' });
+    expect(online.fetched).toEqual([{ url: 'https://local.test/tracepulse/', init: expect.objectContaining({ cache: 'no-cache' }) }]);
+    const offline = startWorker({ online: false, cached: { '/tracepulse/index.html': page } });
+    expect(await offline.request('https://local.test/tracepulse/', 'navigate')).toBe(page);
+    const empty = startWorker({ online: false });
+    await expect(empty.request('https://local.test/tracepulse/', 'navigate')).rejects.toThrow('Server is off.');
+  });
+
+  it('keeps serving built files from the cache before the network', async () => {
+    const asset = { body: 'cached asset' };
+    const { request, fetched } = startWorker({ online: true, cached: { '/tracepulse/assets/index-abc.js': asset } });
+    expect(await request('https://local.test/tracepulse/assets/index-abc.js?v=1')).toBe(asset);
+    expect(fetched).toEqual([]);
+    expect(await request('https://local.test/tracepulse/assets/new.js')).toEqual({ body: 'network' });
+  });
+
+  it('precaches with reload requests and waits for the page before taking over', async () => {
+    const { handlers, added, skipWaiting } = startWorker({ online: true });
+    let installation: Promise<void> | undefined;
+    handlers.install({ waitUntil: (result: Promise<void>) => { installation = result; } });
+    await installation;
+    expect(added).toHaveLength(1);
+    expect(added[0].length).toBeGreaterThan(5);
+    expect(added[0].every((entry) => entry.init?.cache === 'reload')).toBe(true);
+    expect(skipWaiting).not.toHaveBeenCalled();
+    handlers.message({ data: { type: 'SOMETHING_ELSE' } });
+    handlers.message({ data: null });
+    expect(skipWaiting).not.toHaveBeenCalled();
+    handlers.message({ data: { type: 'SKIP_WAITING' } });
+    expect(skipWaiting).toHaveBeenCalledOnce();
+  });
+
+  it('names its cache from the build version and deletes older versions of its own caches on activate', async () => {
+    const prefix: string = JSON.parse(worker.match(/const CACHE_PREFIX = ("[^;]+);/)![1]);
+    const version = worker.match(/const CACHE_NAME = CACHE_PREFIX \+ "([0-9a-f]{16})";/)![1];
+    const { handlers, deleted } = startWorker({ online: true, keys: [`${prefix}${version}`, `${prefix}0000000000000000`, 'tracepulse-other'] });
+    let activation: Promise<void> | undefined;
+    handlers.activate({ waitUntil: (result: Promise<void>) => { activation = result; } });
+    await activation;
+    expect(deleted).toEqual([`${prefix}0000000000000000`]);
+  });
+
   it('serves cached pages offline and deletes only this app\'s older caches', async () => {
     const handlers: Record<string, (event: unknown) => void> = {};
     const cachedResponse = { body: 'cached page' };
@@ -94,7 +185,7 @@ describe('Pages local app build', () => {
     const cache = { addAll: vi.fn(async () => undefined), match: async () => cachedResponse };
     const skipWaiting = vi.fn(async () => undefined);
     const context = {
-      URL,
+      URL, Request: FakeRequest,
       caches: { open: async () => cache, keys: async () => [`${prefix}old`, 'another-app-cache'], delete: async (key: string) => { deleted.push(key); } },
       fetch: async () => { throw new Error('Server is off.'); },
       self: { location: { origin: 'https://local.test' }, addEventListener: (name: string, callback: (event: unknown) => void) => { handlers[name] = callback; }, skipWaiting, clients: { claim: async () => undefined } },
